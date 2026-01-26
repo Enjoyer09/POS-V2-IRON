@@ -14,26 +14,38 @@ from PIL import Image, ImageDraw, ImageFont
 import requests
 
 # ==========================================
-# === IRONWAVES POS - V2.9.1 RC (FINAL POLISH) ===
+# === IRONWAVES POS - V2.0 STABLE ===
 # ==========================================
 
-VERSION = "v2.9.1 RC (Polished)"
+VERSION = "V2.0 Stable"
 
 # --- INFRA (GLOBAL VARS) ---
 RESEND_API_KEY = os.environ.get("RESEND_API_KEY")
 DOMAIN = "emalatxana.ironwaves.store" 
-APP_URL = f"https://{DOMAIN}" # BUG FIX HERE
+APP_URL = f"https://{DOMAIN}"
 DEFAULT_SENDER_EMAIL = "info@ironwaves.store" 
 
 # --- CONFIG ---
 st.set_page_config(page_title=f"Ironwaves POS {VERSION}", page_icon="☕", layout="wide", initial_sidebar_state="collapsed")
 
-# --- CSS (V2.8 ESTETİK DİZAYN) ---
+# --- CSS (ESTETİK DİZAYN & GİZLİ ELEMENTLƏR) ---
 st.markdown("""
     <style>
     @import url('https://fonts.googleapis.com/css2?family=Oswald:wght@400;500;700;900&display=swap');
     .stApp { font-family: 'Oswald', sans-serif !important; background-color: #F4F6F9; }
+    
+    /* GİZLƏDİLMİŞ HİSSƏLƏR */
+    header {visibility: hidden;}
+    #MainMenu {visibility: hidden;}
+    footer {visibility: hidden;}
     [data-testid="stSidebar"] { display: none; }
+    
+    /* PADDING SİL (FULL SCREEN) */
+    .block-container {
+        padding-top: 1rem !important;
+        padding-bottom: 2rem !important;
+        max-width: 100% !important;
+    }
     
     /* NAVİQASİYA TABLARI */
     button[data-baseweb="tab"] {
@@ -46,7 +58,7 @@ st.markdown("""
         border-color: #FF6B35 !important; color: #FF6B35 !important; background-color: #FFF3E0 !important;
     }
     
-    /* POS PRODUCT CARD DESIGN (V2.8 STYLE) */
+    /* POS MƏHSUL KARTI (RƏNGLİ) */
     .pos-card-header {
         background: linear-gradient(135deg, #FF6B35, #FF8C00);
         color: white; padding: 8px; border-radius: 10px 10px 0 0; 
@@ -54,7 +66,7 @@ st.markdown("""
         white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
     }
     .pos-card-body {
-        background: white; border: 1px solid #eee; border-top: none; 
+        background: white; border: 1px solid #ddd; border-top: none; 
         border-radius: 0 0 10px 10px; padding: 10px; text-align: center;
         box-shadow: 0 3px 6px rgba(0,0,0,0.05); margin-bottom: 10px;
     }
@@ -62,30 +74,53 @@ st.markdown("""
 
     /* DÜYMƏLƏR */
     div.stButton > button {
-        border-radius: 10px !important; height: 45px !important; font-weight: 700 !important;
-        box-shadow: 0 2px 0 rgba(0,0,0,0.1) !important; transition: all 0.1s !important;
+        border-radius: 10px !important; height: 48px !important; font-weight: 700 !important;
+        box-shadow: 0 3px 0 rgba(0,0,0,0.1) !important; transition: all 0.1s !important;
     }
-    div.stButton > button:active { transform: translateY(2px) !important; box-shadow: none !important; }
+    div.stButton > button:active { transform: translateY(3px) !important; box-shadow: none !important; }
     div.stButton > button[kind="primary"] { background: linear-gradient(135deg, #2E7D32, #43A047) !important; color: white !important; }
 
-    /* STATUS & STOCK CARDS */
-    .status-dot { height: 10px; width: 10px; border-radius: 50%; display: inline-block; margin-right: 5px; }
-    .status-online { background-color: #2ECC71; } .status-offline { background-color: #BDC3C7; }
-    
+    /* ANBAR KARTLARI */
     .stock-card {
         background: white; border-radius: 10px; padding: 12px; margin-bottom: 8px;
         box-shadow: 0 2px 5px rgba(0,0,0,0.05); border: 1px solid #eee;
         display: flex; justify-content: space-between; align-items: center;
     }
-    .stock-card.low { border-left: 6px solid #E74C3C; background: #FDEDEC; }
+    .stock-card.low { border-left: 6px solid #E74C3C; background: #FFF5F5; }
     .stock-card.ok { border-left: 6px solid #2ECC71; }
     
-    .cart-item { background: white; border-radius: 8px; padding: 10px; margin-bottom: 5px; border: 1px solid #eee; display: flex; justify-content: space-between; align-items: center; }
-    
-    /* FOOTER */
+    /* CART & STATUS */
+    .cart-item { background: white; border-radius: 8px; padding: 10px; margin-bottom: 5px; border: 1px solid #eee; display: flex; justify-content: space-between; align-items: center; box-shadow: 0 2px 4px rgba(0,0,0,0.02); }
     .footer { position: fixed; left: 0; bottom: 0; width: 100%; background: #eee; color: #777; text-align: center; padding: 2px; font-size: 10px; z-index: 999; }
+    
+    /* KATALOQ SEÇİMİ (RADIO -> BUTTONS) */
+    div[role="radiogroup"] > label > div:first-of-type { display: none; } 
+    div[role="radiogroup"] { display: flex; gap: 8px; flex-wrap: wrap; }
+    div[role="radiogroup"] > label {
+        background: white; padding: 6px 15px; border-radius: 8px; 
+        border: 1px solid #ccc; font-weight: bold; cursor: pointer; color: #555;
+    }
+    div[role="radiogroup"] > label:hover { border-color: #FF6B35; color: #FF6B35; }
+    div[role="radiogroup"] > label[data-checked="true"] {
+        background: #FF6B35; color: white; border-color: #FF6B35;
+    }
     </style>
 """, unsafe_allow_html=True)
+
+# --- MENYU DATASI ---
+FIXED_MENU_DATA = [
+    {'name': 'Su', 'price': 2.0, 'cat': 'İçkilər', 'is_coffee': False},
+    {'name': 'Çay (şirniyyat, fıstıq)', 'price': 3.0, 'cat': 'İçkilər', 'is_coffee': False},
+    {'name': 'Americano S', 'price': 3.9, 'cat': 'Qəhvə', 'is_coffee': True},
+    {'name': 'Americano M', 'price': 4.9, 'cat': 'Qəhvə', 'is_coffee': True},
+    {'name': 'Americano L', 'price': 5.9, 'cat': 'Qəhvə', 'is_coffee': True},
+    {'name': 'Cappuccino S', 'price': 4.5, 'cat': 'Qəhvə', 'is_coffee': True},
+    {'name': 'Cappuccino M', 'price': 5.5, 'cat': 'Qəhvə', 'is_coffee': True},
+    {'name': 'Cappuccino L', 'price': 6.5, 'cat': 'Qəhvə', 'is_coffee': True},
+    {'name': 'Latte S', 'price': 4.5, 'cat': 'Qəhvə', 'is_coffee': True},
+    {'name': 'Latte M', 'price': 5.5, 'cat': 'Qəhvə', 'is_coffee': True},
+    {'name': 'Latte L', 'price': 6.5, 'cat': 'Qəhvə', 'is_coffee': True},
+]
 
 # --- DB CONNECTION ---
 try:
@@ -105,7 +140,7 @@ def ensure_schema():
         s.execute(text("CREATE TABLE IF NOT EXISTS ingredients (id SERIAL PRIMARY KEY, name TEXT UNIQUE, stock_qty DECIMAL(10,2) DEFAULT 0, unit TEXT, category TEXT, min_limit DECIMAL(10,2) DEFAULT 10);"))
         s.execute(text("CREATE TABLE IF NOT EXISTS recipes (id SERIAL PRIMARY KEY, menu_item_name TEXT, ingredient_name TEXT, quantity_required DECIMAL(10,2));"))
         # CRM
-        s.execute(text("CREATE TABLE IF NOT EXISTS customers (card_id TEXT PRIMARY KEY, stars INTEGER DEFAULT 0, type TEXT, email TEXT, birth_date TEXT, is_active BOOLEAN DEFAULT FALSE, last_visit TIMESTAMP, secret_token TEXT, gender TEXT);"))
+        s.execute(text("CREATE TABLE IF NOT EXISTS customers (card_id TEXT PRIMARY KEY, stars INTEGER DEFAULT 0, type TEXT, email TEXT, birth_date TEXT, is_active BOOLEAN DEFAULT FALSE, last_visit TIMESTAMP, secret_token TEXT, gender TEXT, last_feedback_star INTEGER DEFAULT -1);"))
         s.execute(text("CREATE TABLE IF NOT EXISTS customer_coupons (id SERIAL PRIMARY KEY, card_id TEXT, coupon_type TEXT, is_used BOOLEAN DEFAULT FALSE, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, expires_at TIMESTAMP);"))
         s.execute(text("CREATE TABLE IF NOT EXISTS notifications (id SERIAL PRIMARY KEY, card_id TEXT, message TEXT, is_read BOOLEAN DEFAULT FALSE, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP);"))
         s.execute(text("CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT);"))
@@ -181,7 +216,7 @@ if st.session_state.get('logged_in'):
     run_action("UPDATE users SET last_seen = NOW() WHERE username = :u", {"u": st.session_state.user})
 
 # ==========================================
-# === SHARED FUNCTIONS (POS & ANALYTICS) ===
+# === SHARED RENDERERS ===
 # ==========================================
 
 def render_pos_interface():
@@ -190,37 +225,35 @@ def render_pos_interface():
     # --- LEFT: CART ---
     with c1:
         st.info("🧾 Çek")
-        # Customer
-        col_sc, col_btn = st.columns([3, 1])
-        qr_val = col_sc.text_input("QR Skan", key="pos_qr", label_visibility="collapsed", placeholder="Müştəri kartı...")
-        if col_btn.button("🔍"):
-            try:
-                cid = qr_val.split("id=")[1].split("&")[0] if "id=" in qr_val else qr_val
-                res = run_query("SELECT * FROM customers WHERE card_id=:id", {"id":cid})
-                if not res.empty: 
-                    st.session_state.current_customer = res.iloc[0].to_dict()
-                    st.success(f"Tanındı: {cid}")
-                else: st.error("Tapılmadı")
-            except: pass
+        # Müştəri (Sürətli Skan)
+        with st.form("scanner_form", clear_on_submit=True):
+            col_in, col_go = st.columns([3, 1])
+            qr_val = col_in.text_input("Müştəri Kartı", label_visibility="collapsed", placeholder="Skan edin...")
+            scan_btn = col_go.form_submit_button("🔍")
+            
+            if scan_btn or qr_val:
+                if qr_val:
+                    try:
+                        clean_input = qr_val.strip()
+                        if "id=" in clean_input: cid = clean_input.split("id=")[1].split("&")[0]
+                        else: cid = clean_input
+                        res = run_query("SELECT * FROM customers WHERE card_id=:id", {"id":cid})
+                        if not res.empty: 
+                            st.session_state.current_customer = res.iloc[0].to_dict(); st.toast(f"✅ Müştəri: {cid}"); st.rerun()
+                        else: st.error(f"❌ Tapılmadı: {cid}")
+                    except: st.error("Xəta")
         
         if st.session_state.current_customer:
             c = st.session_state.current_customer
-            st.info(f"⭐ **{c['stars']}** Bonus | {c['card_id']}")
+            st.success(f"👤 {c['card_id']} | ⭐ **{c['stars']}**")
             if st.button("Ləğv Et", use_container_width=True): st.session_state.current_customer = None; st.rerun()
 
-        # Cart
+        # Səbət
         if st.session_state.cart:
             tb = 0
             for i, it in enumerate(st.session_state.cart):
                 sub = it['qty'] * it['price']; tb += sub
-                st.markdown(f"""
-                <div class="cart-item">
-                    <div style="flex:2; font-weight:bold;">{it['item_name']}</div>
-                    <div style="flex:1;">{it['price']}</div>
-                    <div style="flex:1; color:#E65100;">x{it['qty']}</div>
-                    <div style="flex:1; text-align:right;">{sub:.1f}</div>
-                </div>""", unsafe_allow_html=True)
-                
+                st.markdown(f"""<div class="cart-item"><div style="flex:2; font-weight:bold;">{it['item_name']}</div><div style="flex:1;">{it['price']}</div><div style="flex:1; color:#E65100;">x{it['qty']}</div><div style="flex:1; text-align:right;">{sub:.1f}</div></div>""", unsafe_allow_html=True)
                 b1, b2, b3 = st.columns([1,1,4])
                 if b1.button("➖", key=f"m_{i}"):
                     if it['qty']>1: it['qty']-=1
@@ -254,12 +287,10 @@ def render_pos_interface():
     with c2:
         cats = run_query("SELECT DISTINCT category FROM menu WHERE is_active=TRUE")
         if not cats.empty:
-            # Custom styled toggle for tabs
             cat_list = ["Hamısı"] + sorted(cats['category'].tolist())
             sc = st.radio("Kataloq", cat_list, horizontal=True, label_visibility="collapsed")
-            
             sql = "SELECT * FROM menu WHERE is_active=TRUE"
-            p = {}
+            p = {}; 
             if sc != "Hamısı": sql += " AND category=:c"; p["c"] = sc
             sql += " ORDER BY price ASC"
             
@@ -273,7 +304,6 @@ def render_pos_interface():
                 else: gr[n] = [r]
             
             cols = st.columns(4); i=0
-            
             @st.dialog("Ölçü Seçimi")
             def show_v(bn, its):
                 st.markdown(f"### {bn}")
@@ -281,8 +311,7 @@ def render_pos_interface():
                     lbl = it['item_name'].replace(bn, "").strip()
                     c_b, c_p = st.columns([3,1])
                     if c_b.button(f"{lbl}", key=f"v_{it['id']}", use_container_width=True):
-                        st.session_state.cart.append({'item_name':it['item_name'], 'price':float(it['price']), 'qty':1, 'is_coffee':it['is_coffee']})
-                        st.rerun()
+                        st.session_state.cart.append({'item_name':it['item_name'], 'price':float(it['price']), 'qty':1, 'is_coffee':it['is_coffee']}); st.rerun()
                     c_p.markdown(f"**{it['price']}**")
 
             for bn, its in gr.items():
@@ -300,34 +329,23 @@ def render_pos_interface():
 def render_analytics(is_admin=False):
     st.markdown("### 📊 Satış Hesabatı")
     f_mode = st.radio("Rejim:", ["Günlük", "Aylıq", "Aralıq"], horizontal=True, key=f"an_m_{is_admin}")
-    
-    sql = "SELECT * FROM sales"
-    p = {}
-    
-    # Filter by User if not Admin (Staff sees only own sales)
-    if not is_admin:
-        sql += " WHERE cashier = :u"
-        p['u'] = st.session_state.user
-    else:
-        sql += " WHERE 1=1" # Placeholder for admin
+    sql = "SELECT * FROM sales"; p = {}
+    if not is_admin: sql += " WHERE cashier = :u"; p['u'] = st.session_state.user
+    else: sql += " WHERE 1=1" 
 
     if f_mode == "Günlük":
         d = st.date_input("Gün", datetime.date.today(), key=f"d_{is_admin}")
-        sql += " AND DATE(created_at AT TIME ZONE 'Asia/Baku') = :d"
-        p['d'] = d
+        sql += " AND DATE(created_at AT TIME ZONE 'Asia/Baku') = :d"; p['d'] = d
     elif f_mode == "Aylıq":
-        d = st.date_input("Ay (Hər hansı gününü seç)", datetime.date.today(), key=f"m_{is_admin}")
-        sql += " AND TO_CHAR(created_at AT TIME ZONE 'Asia/Baku', 'YYYY-MM') = :m"
-        p['m'] = d.strftime("%Y-%m")
+        d = st.date_input("Ay", datetime.date.today(), key=f"m_{is_admin}")
+        sql += " AND TO_CHAR(created_at AT TIME ZONE 'Asia/Baku', 'YYYY-MM') = :m"; p['m'] = d.strftime("%Y-%m")
     else:
         d1 = st.date_input("Başlanğıc", datetime.date.today(), key=f"d1_{is_admin}")
         d2 = st.date_input("Bitmə", datetime.date.today(), key=f"d2_{is_admin}")
-        sql += " AND DATE(created_at AT TIME ZONE 'Asia/Baku') BETWEEN :d1 AND :d2"
-        p['d1'] = d1; p['d2'] = d2
+        sql += " AND DATE(created_at AT TIME ZONE 'Asia/Baku') BETWEEN :d1 AND :d2"; p['d1'] = d1; p['d2'] = d2
     
     sql += " ORDER BY created_at DESC"
     sales = run_query(sql, p)
-    
     if not sales.empty:
         sales['created_at'] = pd.to_datetime(sales['created_at']) + pd.Timedelta(hours=4)
         m1, m2, m3 = st.columns(3)
@@ -335,10 +353,7 @@ def render_analytics(is_admin=False):
         m2.metric("Nağd", f"{sales[sales['payment_method']=='Cash']['total'].sum():.2f}")
         m3.metric("Kart", f"{sales[sales['payment_method']=='Card']['total'].sum():.2f}")
         st.dataframe(sales[['id', 'created_at', 'items', 'total', 'payment_method', 'cashier']], hide_index=True, use_container_width=True)
-        
-        # Admin Restore Logic inside Analytics (Only Admin can delete)
         if is_admin:
-            st.divider()
             with st.expander("🗑️ Satış Ləğvi (Admin)"):
                 with st.form("del_sale"):
                     sid = st.number_input("Satış ID", min_value=1)
@@ -346,13 +361,12 @@ def render_analytics(is_admin=False):
                     if st.form_submit_button("Sil"):
                         adm = run_query("SELECT password FROM users WHERE role='admin' LIMIT 1")
                         if not adm.empty and verify_password(apass, adm.iloc[0]['password']):
-                            run_action("DELETE FROM sales WHERE id=:id", {"id":sid})
-                            st.success("Silindi!"); time.sleep(1); st.rerun()
+                            run_action("DELETE FROM sales WHERE id=:id", {"id":sid}); st.success("Silindi!"); time.sleep(1); st.rerun()
                         else: st.error("Şifrə yanlışdır")
-    else: st.info("Bu tarixdə satış yoxdur.")
+    else: st.info("Satış yoxdur.")
 
 # ==========================================
-# === LOGIN SCREEN ===
+# === MAIN UI ===
 # ==========================================
 if not st.session_state.logged_in:
     c1, c2, c3 = st.columns([1,1,1])
@@ -368,10 +382,8 @@ if not st.session_state.logged_in:
                     for _, row in udf.iterrows():
                         if verify_password(pin, row['password']):
                             st.session_state.logged_in=True; st.session_state.user=row['username']; st.session_state.role='staff'
-                            tok=secrets.token_urlsafe(16)
-                            run_action("INSERT INTO active_sessions (token,username,role) VALUES (:t,:u,:r)", {"t":tok,"u":row['username'],"r":'staff'})
-                            st.query_params["token"] = tok
-                            st.rerun(); found=True; break
+                            tok=secrets.token_urlsafe(16); run_action("INSERT INTO active_sessions (token,username,role) VALUES (:t,:u,:r)", {"t":tok,"u":row['username'],"r":'staff'})
+                            st.query_params["token"] = tok; st.rerun(); found=True; break
                     if not found: st.error("Yanlış PIN!")
         with tabs[1]:
             with st.form("admin_login"):
@@ -384,9 +396,7 @@ if not st.session_state.logged_in:
                         st.query_params["token"] = tok; st.rerun()
                     else: st.error("Səhv!")
 else:
-    # ==========================================
-    # === MAIN INTERFACE ===
-    # ==========================================
+    # Header
     h1, h2, h3 = st.columns([4, 1, 1])
     with h1: st.markdown(f"**👤 {st.session_state.user}** | {st.session_state.role.upper()}")
     with h2: 
@@ -401,45 +411,34 @@ else:
     
     if role == 'admin':
         tabs = st.tabs(["POS", "📦 Anbar", "📜 Resept", "Analitika", "CRM", "Menyu", "⚙️ Ayarlar", "Admin", "QR"])
-        
         with tabs[0]: render_pos_interface()
-        
         with tabs[1]: # Anbar
             st.subheader("📦 Anbar")
             cats = run_query("SELECT DISTINCT category FROM ingredients")
             all_cats = ["Hamısı"] + (cats['category'].tolist() if not cats.empty else [])
             f_cat = st.selectbox("Kateqoriya Filtr", all_cats)
-            
             c1, c2 = st.columns([1, 2])
             with c1:
                 with st.form("stk"):
                     st.markdown("**Stok Artır**")
-                    n=st.text_input("Ad"); q=st.number_input("Say"); u=st.selectbox("Vahid",["gr","ml","ədəd"]); c=st.selectbox("Kat",["Bar (Qəhvə/Çay)","Süd","Sirop","Qablaşdırma","Təsərrüfat"])
+                    n=st.text_input("Ad"); q=st.number_input("Say"); u=st.selectbox("Vahid",["gr","ml","ədəd"]); c=st.selectbox("Kat",["Bar","Süd","Sirop","Qablaşdırma","Təsərrüfat"])
                     l=st.number_input("Limit", 10.0)
                     if st.form_submit_button("Yadda Saxla"):
                         run_action("INSERT INTO ingredients (name,stock_qty,unit,category,min_limit) VALUES (:n,:q,:u,:c,:l) ON CONFLICT (name) DO UPDATE SET stock_qty=ingredients.stock_qty+:q", {"n":n,"q":q,"u":u,"c":c,"l":l}); st.rerun()
-                
                 dlist = run_query("SELECT name FROM ingredients")
                 if not dlist.empty:
                     d = st.selectbox("Silinəcək", dlist['name'])
                     if st.button("Sil"): run_action("DELETE FROM ingredients WHERE name=:n",{"n":d}); st.rerun()
-
             with c2:
-                sql = "SELECT * FROM ingredients"
-                p = {}
+                sql = "SELECT * FROM ingredients"; p = {}
                 if f_cat != "Hamısı": sql += " WHERE category=:c"; p['c'] = f_cat
                 sql += " ORDER BY category, name"
                 df = run_query(sql, p)
-                
                 if not df.empty:
                     for _, r in df.iterrows():
                         stat = "low" if r['stock_qty'] <= r['min_limit'] else "ok"
                         icon = "⚠️ AZALIB" if stat == "low" else "✅"
-                        st.markdown(f"""
-                        <div class="stock-card {stat}">
-                            <div><div class="stock-title">{r['name']}</div><div class="stock-meta">{r['category']}</div></div>
-                            <div style="text-align:right"><div class="stock-val">{r['stock_qty']} {r['unit']}</div><div class="stock-meta">{icon}</div></div>
-                        </div>""", unsafe_allow_html=True)
+                        st.markdown(f"<div class='stock-card {stat}'><div><div class='stock-title'>{r['name']}</div><div class='stock-meta'>{r['category']}</div></div><div style='text-align:right'><div class='stock-val'>{r['stock_qty']} {r['unit']}</div><div class='stock-meta'>{icon}</div></div></div>", unsafe_allow_html=True)
 
         with tabs[2]: # Resept
             st.subheader("📜 Reseptlər")
@@ -469,8 +468,7 @@ else:
                             if st.form_submit_button("Əlavə Et"):
                                 run_action("INSERT INTO recipes (menu_item_name, ingredient_name, quantity_required) VALUES (:m,:i,:q)", {"m":p,"i":i,"q":q}); st.rerun()
 
-        with tabs[3]: # Analitika (Admin)
-            render_analytics(is_admin=True)
+        with tabs[3]: render_analytics(is_admin=True)
 
         with tabs[4]: # CRM
             st.subheader("👥 CRM & Kuponlar")
@@ -571,14 +569,15 @@ else:
                                 try:
                                     xls = pd.ExcelFile(r_file)
                                     run_action("TRUNCATE TABLE sales, menu, ingredients, recipes, customers, users CASCADE")
-                                    # Basic Restore Logic (Needs proper structure mapping ideally)
-                                    # For safety, we only restore Menu & Users in this snippet to avoid key conflicts
                                     if 'Users' in xls.sheet_names:
                                         for _, r in pd.read_excel(xls, 'Users').iterrows():
                                             run_action("INSERT INTO users (username, password, role) VALUES (:u, :p, :r)", {"u":r['username'], "p":r['password'], "r":r['role']})
                                     if 'Menu' in xls.sheet_names:
                                         for _, r in pd.read_excel(xls, 'Menu').iterrows():
                                             run_action("INSERT INTO menu (item_name, price, category, is_active, is_coffee) VALUES (:n, :p, :c, TRUE, :ic)", {"n":r['item_name'], "p":r['price'], "c":r['category'], "ic":r['is_coffee']})
+                                    if 'Inventory' in xls.sheet_names:
+                                        for _, r in pd.read_excel(xls, 'Inventory').iterrows():
+                                            run_action("INSERT INTO ingredients (name, stock_qty, unit, category, min_limit) VALUES (:n, :q, :u, :c, :l)", {"n":r['name'], "q":r['stock_qty'], "u":r['unit'], "c":r['category'], "l":r['min_limit']})
                                     st.success("Baza bərpa olundu!")
                                 except Exception as e: st.error(f"Xəta: {e}")
                         else: st.error("Şifrə yanlışdır")
@@ -596,7 +595,6 @@ else:
                         run_action("INSERT INTO customers (card_id, stars, type, secret_token) VALUES (:i, 0, :t, :st)", {"i":i, "t":ctype, "st":tok})
                         if kind == "Termos": run_action("INSERT INTO customer_coupons (card_id, coupon_type) VALUES (:i, 'thermos_welcome')", {"i":i})
                         elif "10%" in kind: run_action("INSERT INTO customer_coupons (card_id, coupon_type) VALUES (:i, 'disc_10')", {"i":i})
-                        
                         img_data = generate_custom_qr(f"{APP_URL}/?id={i}&t={tok}", i)
                         zf.writestr(f"QR_{i}.png", img_data)
                         if not has_mul: st.image(BytesIO(img_data), width=200); single=img_data
@@ -604,8 +602,7 @@ else:
                 else: st.download_button("⬇️ PNG Yüklə", single, "qr.png")
 
     elif role == 'staff':
-        # Staff Tabs
-        staff_tabs = st.tabs(["🛒 POS", "📊 Mənim Satışlarım"])
+        staff_tabs = st.tabs(["POS", "Mənim Satışlarım"])
         with staff_tabs[0]: render_pos_interface()
         with staff_tabs[1]: render_analytics(is_admin=False)
 
