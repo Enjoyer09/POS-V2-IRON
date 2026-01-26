@@ -1,41 +1,27 @@
 import streamlit as st
 import pandas as pd
 import random
-import qrcode
-from io import BytesIO
-import zipfile
-from PIL import Image, ImageDraw, ImageFont
 import time
 from sqlalchemy import text
 import os
 import bcrypt
-import requests
-import datetime
 import secrets
-import threading
+import datetime
 
 # ==========================================
-# === IRONWAVES POS - VERSION 2.0 BETA (INVENTORY TRACKING) ===
+# === IRONWAVES POS - VERSION 2.0 BETA (FULL) ===
 # ==========================================
 
-# --- INFRASTRUKTUR ---
-RESEND_API_KEY = os.environ.get("RESEND_API_KEY")
-DOMAIN = "emalatxana.ironwaves.store" 
-APP_URL = f"https://{DOMAIN}"
-DEFAULT_SENDER_EMAIL = "info@ironwaves.store" 
-
-# --- SƏHİFƏ AYARLARI ---
+# --- CONFIG ---
 st.set_page_config(page_title="Ironwaves POS v2 Beta", page_icon="☕", layout="wide", initial_sidebar_state="expanded")
 
-# ==========================================
-# === STİL VƏ CSS ===
-# ==========================================
+# --- CSS DİZAYN ---
 st.markdown("""
     <style>
     @import url('https://fonts.googleapis.com/css2?family=Oswald:wght@400;500;700;900&display=swap');
     .stApp { font-family: 'Oswald', sans-serif !important; background-color: #FAFAFA; }
     
-    /* POS DÜYMƏLƏRİ */
+    /* DÜYMƏLƏR */
     div.stButton > button {
         border-radius: 12px !important;
         font-weight: bold !important;
@@ -52,67 +38,74 @@ st.markdown("""
     }
     .kpi-val { font-size: 24px; font-weight: bold; color: #333; }
     .kpi-lbl { font-size: 14px; color: #666; }
-    
-    /* STATUS İŞIQLARI */
-    .status-dot { height: 10px; width: 10px; border-radius: 50%; display: inline-block; margin-right: 5px; }
-    .status-online { background-color: #4CAF50; box-shadow: 0 0 5px #4CAF50; }
     </style>
 """, unsafe_allow_html=True)
 
 # --- DATABASE CONNECTION ---
 try:
+    # Railway və ya Lokal mühit yoxlaması
     db_url = os.environ.get("STREAMLIT_CONNECTIONS_NEON_URL")
-    if not db_url: st.error("DB URL not found!"); st.stop()
-    if db_url.startswith("postgres://"): db_url = db_url.replace("postgres://", "postgresql+psycopg2://", 1)
-    conn = st.connection("neon", type="sql", url=db_url, pool_pre_ping=True)
-except Exception as e: st.error(f"DB Error: {e}"); st.stop()
+    if not db_url:
+        # Lokal test üçün fallback (Railway-də buna ehtiyac yoxdur)
+        db_url = os.environ.get("DATABASE_URL")
+    
+    if not db_url:
+        st.error("XƏTA: Database URL tapılmadı! Railway Variables bölməsini yoxlayın.")
+        st.stop()
 
-# --- SCHEMA (V2 YENİLƏNMƏSİ) ---
+    if db_url.startswith("postgres://"):
+        db_url = db_url.replace("postgres://", "postgresql+psycopg2://", 1)
+        
+    conn = st.connection("neon", type="sql", url=db_url, pool_pre_ping=True)
+except Exception as e:
+    st.error(f"DB Error: {e}")
+    st.stop()
+
+# --- DATABASE FUNKSİYALARI ---
+def run_query(q, p=None):
+    return conn.query(q, params=p, ttl=0)
+
+def run_action(q, p=None):
+    with conn.session as s:
+        s.execute(text(q), p)
+        s.commit()
+    return True
+
+# --- SCHEMA & MIGRATION ---
 def ensure_schema():
     with conn.session as s:
-        # KÖHNƏ CƏDVƏLLƏR
+        # 1. ƏSAS CƏDVƏLLƏR
         s.execute(text("CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT);"))
-        s.execute(text("CREATE TABLE IF NOT EXISTS customers (card_id TEXT PRIMARY KEY, stars INTEGER DEFAULT 0, type TEXT, email TEXT, birth_date TEXT, is_active BOOLEAN DEFAULT FALSE, last_visit TIMESTAMP, secret_token TEXT, gender TEXT);"))
-        s.execute(text("CREATE TABLE IF NOT EXISTS menu (id SERIAL PRIMARY KEY, item_name TEXT, price DECIMAL(10,2), category TEXT, is_coffee BOOLEAN DEFAULT FALSE, is_active BOOLEAN DEFAULT TRUE);"))
+        s.execute(text("CREATE TABLE IF NOT EXISTS menu (id SERIAL PRIMARY KEY, item_name TEXT, price DECIMAL(10,2), category TEXT, is_active BOOLEAN DEFAULT FALSE);"))
         s.execute(text("CREATE TABLE IF NOT EXISTS sales (id SERIAL PRIMARY KEY, items TEXT, total DECIMAL(10,2), payment_method TEXT, cashier TEXT, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP);"))
-        s.execute(text("CREATE TABLE IF NOT EXISTS customer_coupons (id SERIAL PRIMARY KEY, card_id TEXT, coupon_type TEXT, is_used BOOLEAN DEFAULT FALSE, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, expires_at TIMESTAMP);"))
-        s.execute(text("CREATE TABLE IF NOT EXISTS notifications (id SERIAL PRIMARY KEY, card_id TEXT, message TEXT, is_read BOOLEAN DEFAULT FALSE, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP);"))
-        s.execute(text("CREATE TABLE IF NOT EXISTS feedback (id SERIAL PRIMARY KEY, card_id TEXT, rating INTEGER, message TEXT, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP);"))
         s.execute(text("CREATE TABLE IF NOT EXISTS users (username TEXT PRIMARY KEY, password TEXT, role TEXT, last_seen TIMESTAMP);"))
         s.execute(text("CREATE TABLE IF NOT EXISTS active_sessions (token TEXT PRIMARY KEY, username TEXT, role TEXT, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP);"))
         
-        # --- V2 YENİ CƏDVƏLLƏR (ANBAR & RESEPT) ---
-        # 1. Ingredients (Xammal): Kofe dənəsi, Süd, Şəkər və s.
+        # 2. V2 BETA CƏDVƏLLƏRİ (ANBAR & RESEPT)
         s.execute(text("CREATE TABLE IF NOT EXISTS ingredients (id SERIAL PRIMARY KEY, name TEXT UNIQUE, stock_qty DECIMAL(10,2) DEFAULT 0, unit TEXT);"))
-        
-        # 2. Recipes (Reseptlər): Hansı məhsula nə qədər xammal gedir
         s.execute(text("CREATE TABLE IF NOT EXISTS recipes (id SERIAL PRIMARY KEY, menu_item_name TEXT, ingredient_name TEXT, quantity_required DECIMAL(10,2));"))
         
+        # 3. DEFAULT ADMIN YARATMAQ
+        chk = s.execute(text("SELECT * FROM users WHERE username='admin'")).fetchone()
+        if not chk:
+            # Şifrə: admin123
+            p_hash = bcrypt.hashpw("admin123".encode(), bcrypt.gensalt()).decode()
+            s.execute(text("INSERT INTO users (username, password, role) VALUES ('admin', :p, 'admin')"), {"p": p_hash})
+        
         s.commit()
+
 ensure_schema()
 
 # --- HELPERS ---
-def get_config(key, default=""):
-    try:
-        df = conn.query("SELECT value FROM settings WHERE key = :k", params={"k": key})
-        return df.iloc[0]['value'] if not df.empty else default
-    except: return default
-
-def run_query(q, p=None): return conn.query(q, params=p, ttl=0)
-
-def run_action(q, p=None): 
-    with conn.session as s: s.execute(text(q), p); s.commit()
-    return True
-
 def hash_password(p): return bcrypt.hashpw(p.encode(), bcrypt.gensalt()).decode()
 def verify_password(p, h): 
     try: return bcrypt.checkpw(p.encode(), h.encode()) if h.startswith('$2b$') else p == h
     except: return False
 
-SHOP_NAME = get_config("shop_name", "Emalatxana Coffee")
-LOGO_BASE64 = get_config("shop_logo_base64", "")
-
 # --- SESSION CHECK ---
+if 'logged_in' not in st.session_state: st.session_state.logged_in = False
+if 'cart' not in st.session_state: st.session_state.cart = []
+
 def check_session_token():
     token = st.query_params.get("token")
     if token:
@@ -122,52 +115,58 @@ def check_session_token():
                 st.session_state.logged_in = True
                 st.session_state.user = res.iloc[0]['username']
                 st.session_state.role = res.iloc[0]['role']
-                run_action("UPDATE users SET last_seen = NOW() WHERE username = :u", {"u": st.session_state.user})
         except: pass
+
 check_session_token()
 
-if 'cart' not in st.session_state: st.session_state.cart = []
-
 # ==========================================
-# === ADMIN PANEL & POS ===
+# === LOGIN PAGE ===
 # ==========================================
-
-if not st.session_state.get('logged_in'):
-    # --- LOGIN SCREEN ---
-    c1, c2, c3 = st.columns([1,1,1])
+if not st.session_state.logged_in:
+    c1, c2, c3 = st.columns([1, 1, 1])
     with c2:
-        st.title("🔐 Giriş")
+        st.markdown("<h1 style='text-align:center;'>🔐 Giriş</h1>", unsafe_allow_html=True)
         with st.form("login"):
-            u = st.text_input("İstifadəçi"); p = st.text_input("Şifrə", type="password")
+            u = st.text_input("İstifadəçi adı")
+            p = st.text_input("Şifrə", type="password")
             if st.form_submit_button("Daxil Ol", use_container_width=True):
-                udf = run_query("SELECT * FROM users WHERE LOWER(username)=LOWER(:u)", {"u":u})
+                udf = run_query("SELECT * FROM users WHERE LOWER(username)=LOWER(:u)", {"u": u})
                 if not udf.empty and verify_password(p, udf.iloc[0]['password']):
                     st.session_state.logged_in = True
-                    st.session_state.role = udf.iloc[0]['role']
                     st.session_state.user = u
+                    st.session_state.role = udf.iloc[0]['role']
+                    
+                    # Token yarat
                     tok = secrets.token_urlsafe(16)
                     run_action("INSERT INTO active_sessions (token, username, role) VALUES (:t, :u, :r)", {"t":tok, "u":u, "r":st.session_state.role})
                     st.query_params["token"] = tok
                     st.rerun()
-                else: st.error("Səhv məlumat!")
+                else:
+                    st.error("Yanlış məlumat!")
 
+# ==========================================
+# === MAIN APP ===
+# ==========================================
 else:
-    # --- MAIN APP ---
-    role = st.session_state.role
-    
-    # HEADER
-    c1, c2 = st.columns([5,1])
-    with c1: st.markdown(f"### 👋 Xoş gəldin, {st.session_state.user} ({role.upper()})")
-    with c2: 
-        if st.button("Çıxış"): 
+    # --- HEADER ---
+    c_head1, c_head2 = st.columns([5, 1])
+    with c_head1:
+        st.markdown(f"### 👋 Xoş gəldin, {st.session_state.user} ({st.session_state.role.upper()})")
+    with c_head2:
+        if st.button("Çıxış"):
             run_action("DELETE FROM active_sessions WHERE token=:t", {"t":st.query_params.get("token")})
-            st.session_state.logged_in = False; st.query_params.clear(); st.rerun()
+            st.session_state.logged_in = False
+            st.query_params.clear()
+            st.rerun()
     st.divider()
 
+    role = st.session_state.role
+
+    # --- ADMIN TABS ---
     if role == 'admin':
-        tabs = st.tabs(["🛒 POS", "📦 Stok & Resept", "📊 Hesabat", "📋 Menyu", "👥 İstifadəçilər"])
-        
-        # --- TAB 1: POS ---
+        tabs = st.tabs(["🛒 POS Terminal", "📦 Stok & Resept", "📊 Hesabat", "📋 Menyu", "👥 İstifadəçilər"])
+
+        # 1. POS TAB
         with tabs[0]:
             c_pos1, c_pos2 = st.columns([1.5, 3])
             
@@ -175,53 +174,59 @@ else:
                 st.success("🧾 Səbət")
                 if st.session_state.cart:
                     for i, item in enumerate(st.session_state.cart):
-                        cc1, cc2, cc3 = st.columns([3,1,1])
+                        cc1, cc2, cc3 = st.columns([3, 1, 1])
                         cc1.write(f"**{item['item_name']}**")
                         cc2.write(f"{item['price']}")
                         if cc3.button("x", key=f"del_{i}"): st.session_state.cart.pop(i); st.rerun()
                     
                     total = sum(d['price'] for d in st.session_state.cart)
-                    st.markdown(f"<h3 style='text-align:right'>CƏM: {total:.2f} ₼</h3>", unsafe_allow_html=True)
+                    st.markdown(f"<h3 style='text-align:right; color:#D32F2F'>CƏM: {total:.2f} ₼</h3>", unsafe_allow_html=True)
                     
                     if st.button("✅ SATIŞI TAMAMLA", type="primary", use_container_width=True):
-                        # 1. Satışı Qeyd Et
+                        # Satışı yaz
                         items_str = ", ".join([x['item_name'] for x in st.session_state.cart])
-                        run_action("INSERT INTO sales (items, total, payment_method, cashier, created_at) VALUES (:i, :t, 'Cash', :c, NOW())", 
-                                   {"i":items_str, "t":total, "c":st.session_state.user})
                         
-                        # 2. V2 BETA: STOKDAN SİLMƏ (DEDUCTION)
                         try:
+                            # TRANSACTION: Satış + Stokdan Çıxılma
                             deducted_log = []
                             with conn.session as s:
+                                # 1. Satışı Sales cədvəlinə yaz
+                                s.execute(text("INSERT INTO sales (items, total, payment_method, cashier, created_at) VALUES (:i, :t, 'Cash', :c, NOW())"), 
+                                           {"i":items_str, "t":total, "c":st.session_state.user})
+                                
+                                # 2. Stokdan silmə (Inventory Deduction Logic)
                                 for item in st.session_state.cart:
-                                    # Resepti tap
                                     recipes = s.execute(text("SELECT ingredient_name, quantity_required FROM recipes WHERE menu_item_name = :m"), {"m": item['item_name']}).fetchall()
                                     if recipes:
                                         for r in recipes:
                                             ing_name = r[0]
                                             qty_needed = r[1]
-                                            # Stokdan çıx
                                             s.execute(text("UPDATE ingredients SET stock_qty = stock_qty - :q WHERE name = :n"), {"q":qty_needed, "n":ing_name})
                                             deducted_log.append(f"{ing_name}: -{qty_needed}")
+                                
                                 s.commit()
+                            
                             if deducted_log:
-                                st.toast(f"Stokdan silindi: {', '.join(deducted_log)}")
-                        except Exception as e:
-                            st.error(f"Stok xətası: {e}")
+                                st.toast(f"Anbardan silindi: {', '.join(deducted_log)}")
+                            
+                            st.session_state.cart = []
+                            st.balloons()
+                            st.success("Satış uğurla tamamlandı!")
+                            time.sleep(1)
+                            st.rerun()
 
-                        st.session_state.cart = []
-                        st.success("Satış uğurlu!")
-                        time.sleep(1)
-                        st.rerun()
+                        except Exception as e:
+                            st.error(f"Xəta baş verdi: {e}")
+
                 else:
                     st.info("Səbət boşdur")
 
             with c_pos2:
                 st.info("🛍️ Məhsullar")
-                cats = run_query("SELECT DISTINCT category FROM menu WHERE is_active=TRUE")
+                cats = run_query("SELECT DISTINCT category FROM menu")
                 if not cats.empty:
                     sel_cat = st.radio("Kateqoriya", cats['category'].tolist(), horizontal=True)
-                    products = run_query("SELECT * FROM menu WHERE category=:c AND is_active=TRUE", {"c":sel_cat})
+                    products = run_query("SELECT * FROM menu WHERE category=:c", {"c":sel_cat})
                     
                     cols = st.columns(4)
                     for idx, row in products.iterrows():
@@ -230,15 +235,13 @@ else:
                                 st.session_state.cart.append(row.to_dict())
                                 st.rerun()
 
-        # --- TAB 2: STOK & RESEPT (V2 NEW) ---
+        # 2. STOK & RESEPT TAB (V2 BETA)
         with tabs[1]:
-            st.markdown("### 🧪 Anbar və Resept İdarəetməsi (V2 Beta)")
+            st.markdown("### 🧪 Anbar və Resept İdarəetməsi")
             t_stk1, t_stk2 = st.tabs(["📦 Xammal Anbarı", "📜 Resept Qurucusu"])
             
             with t_stk1:
                 st.caption("Burada kofe dənələri, süd, sirop və s. əlavə edin.")
-                
-                # Yeni Xammal Əlavə Et
                 with st.form("add_ing"):
                     c1, c2, c3 = st.columns(3)
                     i_name = c1.text_input("Xammal Adı (Məs: Kofe Dənəsi)")
@@ -252,12 +255,10 @@ else:
                             st.rerun()
                         except Exception as e: st.error(str(e))
                 
-                # Anbar Cədvəli
                 st.divider()
                 st.subheader("Hazırkı Anbar Vəziyyəti")
                 ing_df = run_query("SELECT * FROM ingredients ORDER BY name")
                 if not ing_df.empty:
-                    # Kritik stok yoxlanışı
                     ing_df['Status'] = ing_df['stock_qty'].apply(lambda x: "⚠️ AZALIB" if x < 50 else "✅ OK")
                     st.dataframe(ing_df, use_container_width=True)
                 else:
@@ -265,9 +266,7 @@ else:
 
             with t_stk2:
                 st.caption("Məhsul satılanda anbardan nə silinsin?")
-                
-                # Məhsul Seç
-                menu_items = run_query("SELECT item_name FROM menu WHERE is_active=TRUE")
+                menu_items = run_query("SELECT item_name FROM menu")
                 all_ingredients = run_query("SELECT name, unit FROM ingredients")
                 
                 if not menu_items.empty and not all_ingredients.empty:
@@ -295,24 +294,22 @@ else:
                 else:
                     st.warning("Əvvəlcə Menyu və Anbar (Xammal) dolmalıdır.")
 
-        # --- TAB 3: HESABAT ---
+        # 3. HESABAT TAB
         with tabs[2]:
             st.subheader("📊 Satış Statistikası")
             sales = run_query("SELECT * FROM sales ORDER BY created_at DESC")
             if not sales.empty:
                 total_rev = sales['total'].sum()
                 total_tx = len(sales)
-                
-                k1, k2, k3 = st.columns(3)
+                k1, k2 = st.columns(2)
                 k1.markdown(f"<div class='kpi-card'><div class='kpi-val'>{total_rev:.2f} ₼</div><div class='kpi-lbl'>Ümumi Gəlir</div></div>", unsafe_allow_html=True)
                 k2.markdown(f"<div class='kpi-card'><div class='kpi-val'>{total_tx}</div><div class='kpi-lbl'>Satış Sayı</div></div>", unsafe_allow_html=True)
-                
                 st.divider()
                 st.dataframe(sales, use_container_width=True)
             else:
-                st.info("Hələ satış yoxdur")
+                st.info("Satış yoxdur")
 
-        # --- TAB 4: MENYU ---
+        # 4. MENYU TAB
         with tabs[3]:
             st.subheader("📋 Menyu Redaktə")
             with st.form("new_prod"):
@@ -321,18 +318,33 @@ else:
                 p = c2.number_input("Qiymət", min_value=0.0)
                 c = c3.text_input("Kateqoriya (Qəhvə, Desert...)")
                 if st.form_submit_button("Əlavə Et"):
-                    run_action("INSERT INTO menu (item_name, price, category) VALUES (:n, :p, :c)", {"n":n,"p":p,"c":c})
+                    run_action("INSERT INTO menu (item_name, price, category, is_active) VALUES (:n, :p, :c, TRUE)", {"n":n,"p":p,"c":c})
                     st.rerun()
             
             md = run_query("SELECT * FROM menu")
             st.dataframe(md, use_container_width=True)
 
-        # --- TAB 5: USERS ---
+        # 5. USERS TAB
         with tabs[4]:
             st.subheader("👥 İstifadəçilər")
             users = run_query("SELECT username, role, last_seen FROM users")
             st.dataframe(users)
+            
+            with st.expander("Yeni İşçi Yarat"):
+                with st.form("new_user"):
+                    nu = st.text_input("İstifadəçi adı")
+                    np = st.text_input("Şifrə", type="password")
+                    nr = st.selectbox("Rol", ["staff", "admin"])
+                    if st.form_submit_button("Yarat"):
+                        ph = hash_password(np)
+                        try:
+                            run_action("INSERT INTO users (username, password, role) VALUES (:u, :p, :r)", {"u":nu, "p":ph, "r":nr})
+                            st.success("Yaradıldı!")
+                        except: st.error("Bu ad artıq mövcuddur")
 
+    # --- STAFF VIEW ---
     elif role == 'staff':
-        st.warning("Staff rejimi yalnız POS-u görür (Məhdud Giriş)")
-        # Staff yalnız POS hissəsini görəcək (kod təkrarı olmaması üçün sadə saxladım)
+        st.warning("STAFF REJİMİ (Məhdud Giriş)")
+        # Staff yalnız POS-u görür (kod təkrarı olmaması üçün bura adminlə eyni POS kodunu kopyalaya bilərsiniz, 
+        # amma admin-dəki Tab 1-in eynisidir)
+        # Qısa olsun deyə bura təkrar yazmadım, admin panelindən idarə edin.
