@@ -9,13 +9,13 @@ import secrets
 import datetime
 
 # ==========================================
-# === IRONWAVES POS - VERSION 2.2 BETA (FIXED MENU & INVENTORY) ===
+# === IRONWAVES POS - VERSION 2.2.1 BETA (HOTFIX) ===
 # ==========================================
 
 # --- CONFIG ---
 st.set_page_config(page_title="Ironwaves POS v2.2", page_icon="☕", layout="wide", initial_sidebar_state="expanded")
 
-# --- DÜZƏLDİLMİŞ MENYU DATASI (Excel-dən təmizlənmiş versiya) ---
+# --- DÜZƏLDİLMİŞ MENYU DATASI ---
 FIXED_MENU_DATA = [
     {'name': 'Su', 'price': 2.0, 'cat': 'İçkilər', 'is_coffee': False},
     {'name': 'Çay (şirniyyat, fıstıq)', 'price': 3.0, 'cat': 'İçkilər', 'is_coffee': False},
@@ -78,8 +78,9 @@ try:
     conn = st.connection("neon", type="sql", url=db_url, pool_pre_ping=True)
 except Exception as e: st.error(f"DB Error: {e}"); st.stop()
 
-# --- SCHEMA ---
+# --- SCHEMA (HOTFIX APPLIED) ---
 def ensure_schema():
+    # 1. TƏHLÜKƏSİZ YARATMA (Standard Tables)
     with conn.session as s:
         s.execute(text("CREATE TABLE IF NOT EXISTS menu (id SERIAL PRIMARY KEY, item_name TEXT, price DECIMAL(10,2), category TEXT, is_active BOOLEAN DEFAULT FALSE, is_coffee BOOLEAN DEFAULT FALSE);"))
         s.execute(text("CREATE TABLE IF NOT EXISTS sales (id SERIAL PRIMARY KEY, items TEXT, total DECIMAL(10,2), payment_method TEXT, cashier TEXT, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP);"))
@@ -87,17 +88,28 @@ def ensure_schema():
         s.execute(text("CREATE TABLE IF NOT EXISTS active_sessions (token TEXT PRIMARY KEY, username TEXT, role TEXT, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP);"))
         s.execute(text("CREATE TABLE IF NOT EXISTS ingredients (id SERIAL PRIMARY KEY, name TEXT UNIQUE, stock_qty DECIMAL(10,2) DEFAULT 0, unit TEXT, category TEXT, min_limit DECIMAL(10,2) DEFAULT 10);"))
         s.execute(text("CREATE TABLE IF NOT EXISTS recipes (id SERIAL PRIMARY KEY, menu_item_name TEXT, ingredient_name TEXT, quantity_required DECIMAL(10,2));"))
-        
-        # MIGRATION: is_coffee sütununu əlavə et (əgər yoxdursa)
-        try: s.execute(text("ALTER TABLE menu ADD COLUMN is_coffee BOOLEAN DEFAULT FALSE;"))
-        except: pass
-        
-        # Admin check
-        chk = s.execute(text("SELECT * FROM users WHERE username='admin'")).fetchone()
-        if not chk:
-            p_hash = bcrypt.hashpw("admin123".encode(), bcrypt.gensalt()).decode()
-            s.execute(text("INSERT INTO users (username, password, role) VALUES ('admin', :p, 'admin')"), {"p": p_hash})
         s.commit()
+
+    # 2. MIGRATIONS (Ayrı tranzaksiyalarda)
+    with conn.session as s:
+        try:
+            s.execute(text("ALTER TABLE menu ADD COLUMN is_coffee BOOLEAN DEFAULT FALSE;"))
+            s.commit()
+        except Exception:
+            s.rollback() # Sütun artıq varsa, rollback et və davam et
+
+    # 3. ADMIN CHECK (Təmiz tranzaksiya)
+    with conn.session as s:
+        try:
+            chk = s.execute(text("SELECT * FROM users WHERE username='admin'")).fetchone()
+            if not chk:
+                p_hash = bcrypt.hashpw("admin123".encode(), bcrypt.gensalt()).decode()
+                s.execute(text("INSERT INTO users (username, password, role) VALUES ('admin', :p, 'admin')"), {"p": p_hash})
+                s.commit()
+        except Exception as e:
+            s.rollback()
+            st.error(f"Admin check error: {e}")
+
 ensure_schema()
 
 # --- HELPERS ---
@@ -374,5 +386,4 @@ else:
                 st.rerun()
 
     elif role == 'staff':
-        st.warning("Staff Rejimi (POS Only)") 
-        # (Ehtiyac olarsa bura da POS-u əlavə edə bilərik)
+        st.warning("Staff Rejimi (POS Only)")
