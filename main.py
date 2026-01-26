@@ -9,11 +9,55 @@ import secrets
 import datetime
 
 # ==========================================
-# === IRONWAVES POS - VERSION 2.2 BETA (RECIPE & BULK IMPORT) ===
+# === IRONWAVES POS - VERSION 2.2 BETA (FIXED MENU & INVENTORY) ===
 # ==========================================
 
 # --- CONFIG ---
 st.set_page_config(page_title="Ironwaves POS v2.2", page_icon="☕", layout="wide", initial_sidebar_state="expanded")
+
+# --- DÜZƏLDİLMİŞ MENYU DATASI (Excel-dən təmizlənmiş versiya) ---
+FIXED_MENU_DATA = [
+    {'name': 'Su', 'price': 2.0, 'cat': 'İçkilər', 'is_coffee': False},
+    {'name': 'Çay (şirniyyat, fıstıq)', 'price': 3.0, 'cat': 'İçkilər', 'is_coffee': False},
+    {'name': 'Yaşıl çay - jasmin', 'price': 4.0, 'cat': 'İçkilər', 'is_coffee': False},
+    {'name': 'Meyvəli bitki çayı', 'price': 4.0, 'cat': 'İçkilər', 'is_coffee': False},
+    {'name': 'Portağal şirəsi (Təbii)', 'price': 6.0, 'cat': 'İçkilər', 'is_coffee': False},
+    {'name': 'Meyvə şirəsi', 'price': 4.0, 'cat': 'İçkilər', 'is_coffee': False},
+    {'name': 'Limonad (evsayağı)', 'price': 6.0, 'cat': 'İçkilər', 'is_coffee': False},
+    {'name': 'Kola', 'price': 4.0, 'cat': 'İçkilər', 'is_coffee': False},
+    {'name': 'Tonik', 'price': 5.0, 'cat': 'İçkilər', 'is_coffee': False},
+    {'name': 'Energetik (Redbull)', 'price': 6.0, 'cat': 'İçkilər', 'is_coffee': False},
+    {'name': 'Americano S', 'price': 3.9, 'cat': 'Qəhvə', 'is_coffee': True},
+    {'name': 'Americano M', 'price': 4.9, 'cat': 'Qəhvə', 'is_coffee': True},
+    {'name': 'Americano L', 'price': 5.9, 'cat': 'Qəhvə', 'is_coffee': True},
+    {'name': 'Ice Americano S', 'price': 4.5, 'cat': 'Qəhvə', 'is_coffee': True},
+    {'name': 'Ice Americano M', 'price': 5.5, 'cat': 'Qəhvə', 'is_coffee': True},
+    {'name': 'Ice Americano L', 'price': 6.5, 'cat': 'Qəhvə', 'is_coffee': True},
+    {'name': 'Cappuccino S', 'price': 4.5, 'cat': 'Qəhvə', 'is_coffee': True},
+    {'name': 'Cappuccino M', 'price': 5.5, 'cat': 'Qəhvə', 'is_coffee': True},
+    {'name': 'Cappuccino L', 'price': 6.5, 'cat': 'Qəhvə', 'is_coffee': True},
+    {'name': 'Iced Cappuccino S', 'price': 4.7, 'cat': 'Qəhvə', 'is_coffee': True},
+    {'name': 'Iced Cappuccino M', 'price': 5.7, 'cat': 'Qəhvə', 'is_coffee': True},
+    {'name': 'Iced Cappuccino L', 'price': 6.7, 'cat': 'Qəhvə', 'is_coffee': True},
+    {'name': 'Latte S', 'price': 4.5, 'cat': 'Qəhvə', 'is_coffee': True},
+    {'name': 'Latte M', 'price': 5.5, 'cat': 'Qəhvə', 'is_coffee': True},
+    {'name': 'Latte L', 'price': 6.5, 'cat': 'Qəhvə', 'is_coffee': True},
+    {'name': 'Iced Latte S', 'price': 4.7, 'cat': 'Qəhvə', 'is_coffee': True},
+    {'name': 'Iced Latte M', 'price': 5.7, 'cat': 'Qəhvə', 'is_coffee': True},
+    {'name': 'Iced Latte L', 'price': 6.7, 'cat': 'Qəhvə', 'is_coffee': True},
+    {'name': 'Raf S', 'price': 4.7, 'cat': 'Qəhvə', 'is_coffee': True},
+    {'name': 'Raf M', 'price': 5.7, 'cat': 'Qəhvə', 'is_coffee': True},
+    {'name': 'Raf L', 'price': 6.7, 'cat': 'Qəhvə', 'is_coffee': True},
+    {'name': 'Mocha S', 'price': 4.7, 'cat': 'Qəhvə', 'is_coffee': True},
+    {'name': 'Mocha M', 'price': 5.7, 'cat': 'Qəhvə', 'is_coffee': True},
+    {'name': 'Mocha L', 'price': 6.7, 'cat': 'Qəhvə', 'is_coffee': True},
+    {'name': 'Ristretto S', 'price': 3.0, 'cat': 'Qəhvə', 'is_coffee': True},
+    {'name': 'Ristretto M', 'price': 4.0, 'cat': 'Qəhvə', 'is_coffee': True},
+    {'name': 'Ristretto L', 'price': 5.0, 'cat': 'Qəhvə', 'is_coffee': True},
+    {'name': 'Espresso S', 'price': 3.0, 'cat': 'Qəhvə', 'is_coffee': True},
+    {'name': 'Espresso M', 'price': 4.0, 'cat': 'Qəhvə', 'is_coffee': True},
+    {'name': 'Espresso L', 'price': 5.0, 'cat': 'Qəhvə', 'is_coffee': True}
+]
 
 # --- CSS ---
 st.markdown("""
@@ -21,8 +65,6 @@ st.markdown("""
     @import url('https://fonts.googleapis.com/css2?family=Oswald:wght@400;500;700;900&display=swap');
     .stApp { font-family: 'Oswald', sans-serif !important; background-color: #FAFAFA; }
     div.stButton > button { border-radius: 12px !important; height: 60px !important; font-weight: bold !important; }
-    
-    /* STOCK STATUS */
     .stock-ok { border-left: 5px solid green; padding: 10px; background: white; margin-bottom: 5px; border-radius: 5px; }
     .stock-low { border-left: 5px solid red; padding: 10px; background: #fff0f0; margin-bottom: 5px; border-radius: 5px; }
     </style>
@@ -39,12 +81,16 @@ except Exception as e: st.error(f"DB Error: {e}"); st.stop()
 # --- SCHEMA ---
 def ensure_schema():
     with conn.session as s:
-        s.execute(text("CREATE TABLE IF NOT EXISTS menu (id SERIAL PRIMARY KEY, item_name TEXT, price DECIMAL(10,2), category TEXT, is_active BOOLEAN DEFAULT FALSE);"))
+        s.execute(text("CREATE TABLE IF NOT EXISTS menu (id SERIAL PRIMARY KEY, item_name TEXT, price DECIMAL(10,2), category TEXT, is_active BOOLEAN DEFAULT FALSE, is_coffee BOOLEAN DEFAULT FALSE);"))
         s.execute(text("CREATE TABLE IF NOT EXISTS sales (id SERIAL PRIMARY KEY, items TEXT, total DECIMAL(10,2), payment_method TEXT, cashier TEXT, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP);"))
         s.execute(text("CREATE TABLE IF NOT EXISTS users (username TEXT PRIMARY KEY, password TEXT, role TEXT, last_seen TIMESTAMP);"))
         s.execute(text("CREATE TABLE IF NOT EXISTS active_sessions (token TEXT PRIMARY KEY, username TEXT, role TEXT, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP);"))
         s.execute(text("CREATE TABLE IF NOT EXISTS ingredients (id SERIAL PRIMARY KEY, name TEXT UNIQUE, stock_qty DECIMAL(10,2) DEFAULT 0, unit TEXT, category TEXT, min_limit DECIMAL(10,2) DEFAULT 10);"))
         s.execute(text("CREATE TABLE IF NOT EXISTS recipes (id SERIAL PRIMARY KEY, menu_item_name TEXT, ingredient_name TEXT, quantity_required DECIMAL(10,2));"))
+        
+        # MIGRATION: is_coffee sütununu əlavə et (əgər yoxdursa)
+        try: s.execute(text("ALTER TABLE menu ADD COLUMN is_coffee BOOLEAN DEFAULT FALSE;"))
+        except: pass
         
         # Admin check
         chk = s.execute(text("SELECT * FROM users WHERE username='admin'")).fetchone()
@@ -108,7 +154,7 @@ else:
     st.markdown(f"### 👤 {st.session_state.user} | {st.session_state.role.upper()}")
     
     if st.session_state.role == 'admin':
-        tabs = st.tabs(["🛒 POS", "📦 Stok (Anbar)", "📜 Resept Qurucusu", "📋 Menyu (Excel)", "⚙️ Ayarlar"])
+        tabs = st.tabs(["🛒 POS", "📦 Stok (Anbar)", "📜 Resept Qurucusu", "📋 Menyu (Data)", "⚙️ Ayarlar"])
         
         # --- TAB 1: POS (Satış) ---
         with tabs[0]:
@@ -131,11 +177,10 @@ else:
                             run_action("INSERT INTO sales (items, total, payment_method, cashier, created_at) VALUES (:i, :t, 'Cash', :c, NOW())", 
                                        {"i":items_str, "t":total, "c":st.session_state.user})
                             
-                            # STOKDAN ÇIXILMA (MƏNTİQ)
+                            # STOKDAN ÇIXILMA
                             log = []
                             with conn.session as s:
                                 for item in st.session_state.cart:
-                                    # Hər məhsulun reseptini tapırıq
                                     recipes = s.execute(text("SELECT ingredient_name, quantity_required FROM recipes WHERE menu_item_name = :m"), {"m": item['item_name']}).fetchall()
                                     if recipes:
                                         for r in recipes:
@@ -154,7 +199,7 @@ else:
 
             with c2:
                 # KATEQORIYA
-                cats = run_query("SELECT DISTINCT category FROM menu")
+                cats = run_query("SELECT DISTINCT category FROM menu WHERE is_active=TRUE")
                 if not cats.empty:
                     cat_list = ["Hamısı"] + cats['category'].tolist()
                     sel_cat = st.radio("Kataloq", cat_list, horizontal=True)
@@ -164,6 +209,9 @@ else:
                     if sel_cat != "Hamısı":
                         sql += " AND category=:c"
                         params["c"] = sel_cat
+                    
+                    # Qiymətə görə sırala (Ucuzdan bahaya)
+                    sql += " ORDER BY price ASC"
                     
                     prods = run_query(sql, params)
                     cols = st.columns(4)
@@ -227,15 +275,14 @@ else:
                             <div style="font-size:12px; color:gray;">Min: {row['min_limit']} | {msg}</div>
                         </div>
                         """, unsafe_allow_html=True)
+                else:
+                    st.info("Anbar boşdur.")
 
         # --- TAB 3: RESEPT QURUCUSU (TƏKMİL) ---
         with tabs[2]:
             st.subheader("📜 Məhsul Reseptləri")
-            st.info("Bir məhsula birdən çox xammal əlavə edə bilərsiniz.")
-            
             c_sel, c_build = st.columns([1, 2])
             
-            # 1. Məhsul Seçimi (Session State-də saxlayırıq)
             with c_sel:
                 menu_items = run_query("SELECT item_name FROM menu WHERE is_active=TRUE")
                 if not menu_items.empty:
@@ -245,18 +292,13 @@ else:
                     st.warning("Menyu boşdur.")
                     st.stop()
 
-            # 2. Reseptin Yığılması
             with c_build:
                 prod_name = st.session_state.selected_recipe_product
                 st.markdown(f"#### 🛠️ {prod_name} tərkibi:")
                 
-                # --- İNDİKİ RESEPTİ GÖSTƏR ---
                 curr_recipe = run_query("SELECT id, ingredient_name, quantity_required FROM recipes WHERE menu_item_name=:m", {"m":prod_name})
-                
                 if not curr_recipe.empty:
                     st.table(curr_recipe)
-                    
-                    # Reseptdən Silmə (Tək-tək)
                     del_rec_id = st.selectbox("Reseptdən silmək üçün ID seç:", curr_recipe['id'].tolist(), key="del_rec_sel")
                     if st.button("Seçilən sətri sil"):
                         run_action("DELETE FROM recipes WHERE id=:id", {"id":del_rec_id})
@@ -265,72 +307,61 @@ else:
                     st.info("Bu məhsul üçün hələ resept yoxdur.")
 
                 st.divider()
-                
-                # --- YENİ XAMMAL ƏLAVƏ ET ---
                 st.markdown("➕ Tərkib əlavə et:")
                 all_ings = run_query("SELECT name, unit FROM ingredients ORDER BY name")
-                
                 if not all_ings.empty:
                     with st.form("add_rec_item"):
                         c_i1, c_i2 = st.columns(2)
                         sel_ing_row = c_i1.selectbox("Xammal", all_ings['name'].unique())
-                        
-                        # Vahidi tapmaq
                         u = all_ings[all_ings['name']==sel_ing_row].iloc[0]['unit']
                         qty_req = c_i2.number_input(f"Miqdar ({u})", min_value=0.1, step=0.1)
-                        
                         if st.form_submit_button("Əlavə Et"):
                             run_action("INSERT INTO recipes (menu_item_name, ingredient_name, quantity_required) VALUES (:m, :i, :q)",
                                        {"m":prod_name, "i":sel_ing_row, "q":qty_req})
                             st.success("Əlavə edildi!")
                             st.rerun()
-                else:
-                    st.warning("Anbar boşdur. Əvvəlcə 'Stok' bölməsinə xammal əlavə edin.")
 
-        # --- TAB 4: MENYU (BULK IMPORT) ---
+        # --- TAB 4: MENYU (DÜZƏLDİLMİŞ & EXCEL) ---
         with tabs[3]:
-            st.subheader("📋 Menyu İdarəetməsi & Excel Import")
+            st.subheader("📋 Menyu İdarəetməsi")
             
-            with st.expander("📥 Excel-dən Menyu Yüklə (Bulk Import)", expanded=False):
-                st.info("Excel faylında bu sütunlar olmalıdır: item_name, price, category")
-                up_file = st.file_uploader("Excel faylı (.xlsx)", type=['xlsx'])
-                
-                if up_file:
-                    if st.button("Faylı Oxu və Bazaya Yaz"):
-                        try:
-                            df = pd.read_excel(up_file)
-                            # Sütun yoxlanışı
-                            if not {'item_name', 'price', 'category'}.issubset(df.columns):
-                                st.error("Sütunlar düzgün deyil! (item_name, price, category) olmalıdır.")
-                            else:
-                                count = 0
-                                for _, row in df.iterrows():
-                                    if pd.isna(row['item_name']): continue
-                                    # Insert
-                                    run_action("""
-                                        INSERT INTO menu (item_name, price, category, is_active) 
-                                        VALUES (:n, :p, :c, TRUE)
-                                        """, {"n":str(row['item_name']), "p":float(row['price']), "c":str(row['category'])})
-                                    count += 1
-                                st.success(f"✅ {count} məhsul menyuya əlavə edildi!")
-                                time.sleep(1)
-                                st.rerun()
-                        except Exception as e:
-                            st.error(f"Xəta: {e}")
+            # 1. FIXED MENU LOAD BUTTON
+            with st.expander("🔄 Standart Menyunu Yüklə (Reset)", expanded=True):
+                st.warning("DİQQƏT: Bu düyməyə basdıqda köhnə menyu silinəcək və Excel-dən təmizlənmiş yeni qiymətlər yazılacaq!")
+                if st.button("Düzəldilmiş Menyunu Bazaya Yaz"):
+                    run_action("DELETE FROM menu")
+                    count = 0
+                    for item in FIXED_MENU_DATA:
+                        run_action("""
+                            INSERT INTO menu (item_name, price, category, is_active, is_coffee) 
+                            VALUES (:n, :p, :c, TRUE, :ic)
+                            """, {"n":item['name'], "p":item['price'], "c":item['cat'], "ic":item['is_coffee']})
+                        count += 1
+                    st.success(f"✅ {count} məhsul uğurla yükləndi (Qiymətlər düzəldi!)")
+                    time.sleep(1); st.rerun()
 
             st.divider()
             
-            # TƏK-TƏK ƏLAVƏ ET
-            with st.form("single_menu_add"):
-                c1, c2, c3 = st.columns(3)
-                n = c1.text_input("Ad")
-                p = c2.number_input("Qiymət", min_value=0.0)
-                c = c3.text_input("Kateqoriya")
-                if st.form_submit_button("Tək Məhsul Yarat"):
-                    run_action("INSERT INTO menu (item_name, price, category, is_active) VALUES (:n, :p, :c, TRUE)", {"n":n, "p":p, "c":c})
-                    st.rerun()
+            # Excel Upload (Optional)
+            with st.expander("📥 Başqa Excel Faylı Yüklə (Bulk Import)"):
+                up_file = st.file_uploader("Excel faylı (.xlsx)", type=['xlsx'])
+                if up_file and st.button("Faylı Oxu və Bazaya Yaz"):
+                    try:
+                        df = pd.read_excel(up_file)
+                        if not {'item_name', 'price', 'category'}.issubset(df.columns):
+                            st.error("Sütunlar düzgün deyil! (item_name, price, category) olmalıdır.")
+                        else:
+                            count = 0
+                            for _, row in df.iterrows():
+                                if pd.isna(row['item_name']): continue
+                                run_action("INSERT INTO menu (item_name, price, category, is_active) VALUES (:n, :p, :c, TRUE)", 
+                                           {"n":str(row['item_name']), "p":float(row['price']), "c":str(row['category'])})
+                                count += 1
+                            st.success(f"✅ {count} məhsul əlavə edildi!")
+                            time.sleep(1); st.rerun()
+                    except Exception as e: st.error(f"Xəta: {e}")
 
-            # MÖVCUD MENYU
+            # Mövcud Menyu
             st.markdown("#### Mövcud Menyu")
             menu_df = run_query("SELECT * FROM menu ORDER BY category, item_name")
             st.dataframe(menu_df, use_container_width=True)
@@ -343,6 +374,5 @@ else:
                 st.rerun()
 
     elif role == 'staff':
-        # Staff yalnız POS-u görür (kod təkrarı olmasın deyə bura sadələşdirilmiş versiya qoyuruq)
-        st.warning("Staff Rejimi") 
-        # (Admin panelindəki POS kodunun eynisini bura da əlavə edə bilərsiniz)
+        st.warning("Staff Rejimi (POS Only)") 
+        # (Ehtiyac olarsa bura da POS-u əlavə edə bilərik)
