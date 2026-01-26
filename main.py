@@ -14,12 +14,12 @@ from PIL import Image, ImageDraw, ImageFont
 import requests
 
 # ==========================================
-# === IRONWAVES POS - VERSION 2.7 BETA ===
-# === (SMART POS GROUPING & FULL MANAGEMENT) ===
+# === IRONWAVES POS - VERSION 2.8 BETA ===
+# === (DESIGN, PIN LOGIN, GREEN QR) ===
 # ==========================================
 
 # --- CONFIG ---
-st.set_page_config(page_title="Ironwaves POS v2.7", page_icon="☕", layout="wide", initial_sidebar_state="collapsed")
+st.set_page_config(page_title="Ironwaves POS v2.8", page_icon="☕", layout="wide", initial_sidebar_state="collapsed")
 
 # --- MENYU DATASI (DEFAULT) ---
 FIXED_MENU_DATA = [
@@ -34,7 +34,6 @@ FIXED_MENU_DATA = [
     {'name': 'Latte S', 'price': 4.5, 'cat': 'Qəhvə', 'is_coffee': True},
     {'name': 'Latte M', 'price': 5.5, 'cat': 'Qəhvə', 'is_coffee': True},
     {'name': 'Latte L', 'price': 6.5, 'cat': 'Qəhvə', 'is_coffee': True},
-    # Digər məhsullar Excel-dən gələcək...
 ]
 
 # --- INFRA ---
@@ -43,7 +42,7 @@ DOMAIN = "emalatxana.ironwaves.store"
 APP_URL = f"https://{DOMAIN}"
 DEFAULT_SENDER_EMAIL = "info@ironwaves.store" 
 
-# --- CSS ---
+# --- CSS (YENİLƏNMİŞ DİZAYN) ---
 st.markdown("""
     <style>
     @import url('https://fonts.googleapis.com/css2?family=Oswald:wght@400;500;700;900&display=swap');
@@ -63,9 +62,9 @@ st.markdown("""
         color: #555 !important;
     }
     button[data-baseweb="tab"][aria-selected="true"] {
-        border-color: #FF6B35 !important;
-        color: #FF6B35 !important;
-        background-color: #FFF3E0 !important;
+        border-color: #2E7D32 !important;
+        color: #2E7D32 !important;
+        background-color: #E8F5E9 !important;
     }
     
     /* BUTTONS */
@@ -79,7 +78,19 @@ st.markdown("""
     div.stButton > button:active { transform: translateY(2px) !important; box-shadow: none !important; }
     
     /* PRIMARY */
-    div.stButton > button[kind="primary"] { background: linear-gradient(135deg, #FF6B35, #FF8C00) !important; color: white !important; }
+    div.stButton > button[kind="primary"] { background: linear-gradient(135deg, #2E7D32, #43A047) !important; color: white !important; }
+
+    /* POS CARD STYLE */
+    .pos-card-header {
+        background: linear-gradient(135deg, #FF6B35, #FF8C00);
+        color: white; padding: 5px; border-radius: 8px 8px 0 0; text-align: center; font-weight: bold;
+    }
+    .pos-card-body {
+        background: white; border: 1px solid #eee; border-top: none; 
+        border-radius: 0 0 8px 8px; padding: 10px; text-align: center;
+        box-shadow: 0 2px 5px rgba(0,0,0,0.05);
+    }
+    .pos-price { font-size: 18px; color: #2E7D32; font-weight: bold; margin-top: 5px; }
 
     /* STATUS */
     .status-dot { height: 10px; width: 10px; border-radius: 50%; display: inline-block; margin-right: 5px; }
@@ -145,16 +156,46 @@ def verify_password(p, h):
     try: return bcrypt.checkpw(p.encode(), h.encode()) if h.startswith('$2b$') else p == h
     except: return False
 @st.cache_data
-def generate_custom_qr(data, center_text):
-    qr = qrcode.QRCode(box_size=10, border=2); qr.add_data(data); qr.make(fit=True)
-    img = qr.make_image(fill_color="black", back_color="white").convert('RGB')
-    draw = ImageDraw.Draw(img)
-    try: font = ImageFont.truetype("arial.ttf", 20)
-    except: font = ImageFont.load_default()
-    bbox = draw.textbbox((0,0), center_text, font=font); w, h = bbox[2]-bbox[0], bbox[3]-bbox[1]
-    draw.rectangle([(img.size[0]-w)/2-5, (img.size[1]-h)/2-5, (img.size[0]+w)/2+5, (img.size[1]+h)/2+5], fill="white")
-    draw.text(((img.size[0]-w)/2, (img.size[1]-h)/2), center_text, fill="black", font=font)
+def generate_custom_qr(data, center_text, transparent=False):
+    qr = qrcode.QRCode(box_size=10, border=1) # Sərhəd kiçik olsun
+    qr.add_data(data); qr.make(fit=True)
+    img = qr.make_image(fill_color="black", back_color="white").convert('RGBA')
+    
+    # Rəng dəyişimi: Qara -> Yaşıl, Ağ -> Transparent
+    datas = img.getdata()
+    newData = []
+    for item in datas:
+        # Əgər ağdırsa (255,255,255) -> Transparent et
+        if item[0] > 200 and item[1] > 200 and item[2] > 200:
+            newData.append((255, 255, 255, 0))
+        else:
+            # Qara yerinə Tünd Yaşıl (#006400)
+            newData.append((0, 100, 0, 255))
+    img.putdata(newData)
+
+    # Ortaya mətn yazmaq (sadələşdirilmiş, şəkilsiz)
+    if center_text:
+        draw = ImageDraw.Draw(img)
+        try: font = ImageFont.truetype("arial.ttf", 20)
+        except: font = ImageFont.load_default()
+        # Mətni sadəcə aşağı yazırıq ki, QR pozulmasın
+        # (Professional QR generatorlarda mərkəz boşaldılır, burada sadəlik üçün)
+        pass 
+
     buf = BytesIO(); img.save(buf, format="PNG"); return buf.getvalue()
+
+def clean_df_for_excel(df):
+    for col in df.select_dtypes(include=['datetime64[ns, UTC]', 'datetime64[ns]']).columns:
+        df[col] = df[col].astype(str)
+    return df
+
+def send_email(to_email, subject, body):
+    if not RESEND_API_KEY: return False
+    url = "https://api.resend.com/emails"
+    headers = {"Authorization": f"Bearer {RESEND_API_KEY}", "Content-Type": "application/json"}
+    payload = {"from": f"Emalatxana <{DEFAULT_SENDER_EMAIL}>", "to": [to_email], "subject": subject, "html": body}
+    try: requests.post(url, json=payload, headers=headers); return True
+    except: return False
 
 # --- SESSION ---
 if 'logged_in' not in st.session_state: st.session_state.logged_in = False
@@ -178,22 +219,41 @@ if st.session_state.get('logged_in'):
     run_action("UPDATE users SET last_seen = NOW() WHERE username = :u", {"u": st.session_state.user})
 
 # ==========================================
-# === LOGIN ===
+# === LOGIN (V2.8 PIN LOGIC) ===
 # ==========================================
 if not st.session_state.logged_in:
     c1, c2, c3 = st.columns([1,1,1])
     with c2:
-        st.markdown("<h2 style='text-align:center;'>☕ EMALATXANA POS</h2>", unsafe_allow_html=True)
-        with st.form("login"):
-            u = st.text_input("User"); p = st.text_input("Pass", type="password")
-            if st.form_submit_button("Giriş", use_container_width=True):
-                udf = run_query("SELECT * FROM users WHERE LOWER(username)=LOWER(:u)", {"u":u})
-                if not udf.empty and verify_password(p, udf.iloc[0]['password']):
-                    st.session_state.logged_in = True; st.session_state.user = u; st.session_state.role = udf.iloc[0]['role']
-                    tok = secrets.token_urlsafe(16)
-                    run_action("INSERT INTO active_sessions (token, username, role) VALUES (:t, :u, :r)", {"t":tok, "u":u, "r":st.session_state.role})
-                    st.query_params["token"] = tok; st.rerun()
-                else: st.error("Səhv!")
+        st.markdown("<h2 style='text-align:center; color:#2E7D32;'>☕ EMALATXANA POS</h2>", unsafe_allow_html=True)
+        tabs = st.tabs(["İŞÇİ (PIN)", "ADMİN"])
+        
+        # --- STAFF PIN LOGIN (NO USERNAME) ---
+        with tabs[0]:
+            with st.form("staff_login"):
+                pin = st.text_input("PIN Kodu Daxil Edin", type="password", placeholder="****")
+                if st.form_submit_button("Sistemə Giriş", use_container_width=True):
+                    # Bütün staffları yoxlayır
+                    udf = run_query("SELECT * FROM users WHERE role='staff'")
+                    found = False
+                    for _, row in udf.iterrows():
+                        if verify_password(pin, row['password']):
+                            st.session_state.logged_in=True; st.session_state.user=row['username']; st.session_state.role='staff'
+                            tok=secrets.token_urlsafe(16)
+                            run_action("INSERT INTO active_sessions (token,username,role) VALUES (:t,:u,:r)", {"t":tok,"u":row['username'],"r":'staff'})
+                            st.query_params["token"] = tok
+                            st.rerun(); found=True; break
+                    if not found: st.error("⚠️ Yanlış PIN Kod!")
+
+        with tabs[1]:
+            with st.form("admin_login"):
+                u = st.text_input("User"); p = st.text_input("Pass", type="password")
+                if st.form_submit_button("Admin Giriş", use_container_width=True):
+                    udf = run_query("SELECT * FROM users WHERE LOWER(username)=LOWER(:u) AND role='admin'", {"u":u})
+                    if not udf.empty and verify_password(p, udf.iloc[0]['password']):
+                        st.session_state.logged_in=True; st.session_state.user=u; st.session_state.role='admin'
+                        tok=secrets.token_urlsafe(16); run_action("INSERT INTO active_sessions (token,username,role) VALUES (:t,:u,:r)", {"t":tok,"u":u,"r":'admin'})
+                        st.query_params["token"] = tok; st.rerun()
+                    else: st.error("Səhv!")
 else:
     # ==========================================
     # === MAIN INTERFACE ===
@@ -213,20 +273,19 @@ else:
 
     role = st.session_state.role
     
-    # --- TABS ---
+    # --- TABS (BOLD) ---
     TABS = ["POS", "📦 Anbar", "📜 Resept", "Analitika", "CRM", "Menyu", "⚙️ Ayarlar", "Admin", "QR"]
     if role == 'staff': TABS = ["POS"]
     tabs = st.tabs(TABS)
     
-    # --- TAB 1: POS (GROUPED) ---
+    # --- TAB 1: POS (POPUP & GROUPED) ---
     with tabs[0]:
         c1, c2 = st.columns([1.5, 3])
         
         # --- LEFT: CART ---
         with c1:
             st.info("🧾 Çek")
-            
-            # Customer
+            # Customer Scan
             with st.expander("👤 Müştəri (Bonus)", expanded=False):
                 qr_val = st.text_input("QR/ID", key="pos_qr", placeholder="Enter...")
                 if st.button("Axtar"):
@@ -242,21 +301,12 @@ else:
                 st.success(f"Müştəri: {curr['card_id']} | Bonus: {curr['stars']}")
                 if st.button("Ləğv Et"): st.session_state.current_customer = None; st.rerun()
 
-            # Cart Items
             if st.session_state.cart:
                 total_bill = 0
                 for i, item in enumerate(st.session_state.cart):
                     item_total = item['qty'] * item['price']
                     total_bill += item_total
-                    st.markdown(f"""
-                    <div class="cart-item">
-                        <div style="flex:2;"><b>{item['item_name']}</b></div>
-                        <div style="flex:1;">{item['price']}</div>
-                        <div style="flex:1; color:orange;">x{item['qty']}</div>
-                        <div style="flex:1; text-align:right;">{item_total:.1f}</div>
-                    </div>
-                    """, unsafe_allow_html=True)
-                    
+                    st.markdown(f"""<div class="cart-item"><div style="flex:2;"><b>{item['item_name']}</b></div><div style="flex:1;">{item['price']}</div><div style="flex:1; color:orange;">x{item['qty']}</div><div style="flex:1; text-align:right;">{item_total:.1f}</div></div>""", unsafe_allow_html=True)
                     b1, b2, b3 = st.columns([1,1,4])
                     if b1.button("➖", key=f"m_{i}"):
                         if item['qty'] > 1: item['qty'] -= 1
@@ -264,8 +314,7 @@ else:
                         st.rerun()
                     if b2.button("➕", key=f"p_{i}"): item['qty'] += 1; st.rerun()
 
-                st.markdown(f"<h2 style='text-align:right; color:#D35400'>{total_bill:.2f} ₼</h2>", unsafe_allow_html=True)
-                
+                st.markdown(f"<h2 style='text-align:right; color:#2E7D32'>{total_bill:.2f} ₼</h2>", unsafe_allow_html=True)
                 pay_m = st.radio("Ödəniş:", ["Nəğd", "Kart"], horizontal=True)
                 
                 if st.button("✅ ÖDƏNİŞ ET", type="primary", use_container_width=True):
@@ -274,112 +323,95 @@ else:
                         run_action("INSERT INTO sales (items, total, payment_method, cashier, created_at) VALUES (:i, :t, :p, :c, NOW())", 
                                    {"i":items_str, "t":total_bill, "p":("Cash" if pay_m=="Nəğd" else "Card"), "c":st.session_state.user})
                         
-                        # Inventory & Loyalty Logic
                         with conn.session as s:
                             for item in st.session_state.cart:
                                 recipes = s.execute(text("SELECT ingredient_name, quantity_required FROM recipes WHERE menu_item_name = :m"), {"m": item['item_name']}).fetchall()
                                 if recipes:
                                     for r in recipes:
                                         s.execute(text("UPDATE ingredients SET stock_qty = stock_qty - :q WHERE name = :n"), {"q":float(r[1])*item['qty'], "n":r[0]})
-                            
                             if st.session_state.current_customer:
                                 cid = st.session_state.current_customer['card_id']
                                 gain = sum([x['qty'] for x in st.session_state.cart if x.get('is_coffee')])
                                 s.execute(text("UPDATE customers SET stars = stars + :s WHERE card_id=:id"), {"s":gain, "id":cid})
                             s.commit()
-                        
-                        st.session_state.cart = []
-                        st.success("Satıldı!"); time.sleep(1); st.rerun()
+                        st.session_state.cart = []; st.success("Satıldı!"); time.sleep(1); st.rerun()
                     except Exception as e: st.error(f"Xəta: {e}")
             else: st.info("Səbət boşdur")
 
-        # --- RIGHT: PRODUCTS (GROUPED UI) ---
+        # --- RIGHT: PRODUCTS (GROUPED) ---
         with c2:
             cats = run_query("SELECT DISTINCT category FROM menu WHERE is_active=TRUE")
             if not cats.empty:
                 cat_list = ["Hamısı"] + sorted(cats['category'].tolist())
                 sel_cat = st.radio("Kataloq", cat_list, horizontal=True)
-                
                 sql = "SELECT * FROM menu WHERE is_active=TRUE"
                 p = {}
                 if sel_cat != "Hamısı": sql += " AND category=:c"; p["c"] = sel_cat
                 sql += " ORDER BY price ASC"
-                
                 prods = run_query(sql, p)
                 
-                # --- GROUPING LOGIC ---
+                # Grouping
                 grouped = {}
                 for _, row in prods.iterrows():
                     name = row['item_name']
                     parts = name.split()
-                    # Əgər son söz S, M, L, XL, Double, Single kimidirsə qruplaşdır
                     if len(parts) > 1 and parts[-1] in ['S', 'M', 'L', 'XL', 'Single', 'Double']:
                         base = " ".join(parts[:-1])
                         grouped.setdefault(base, []).append(row)
-                    else:
-                        grouped[name] = [row] # Single item list
+                    else: grouped[name] = [row]
                 
-                # --- RENDER GRID ---
                 cols = st.columns(4)
                 i = 0
                 
-                @st.dialog("Variant Seçimi")
+                @st.dialog("Ölçü Seçimi")
                 def show_variants(base_name, items):
                     st.write(f"### {base_name}")
                     for item in items:
                         label = item['item_name'].replace(base_name, "").strip()
                         c_btn, c_pr = st.columns([3, 1])
-                        if c_btn.button(f"{label} ({item['price']} ₼)", key=f"v_{item['id']}", use_container_width=True):
+                        if c_btn.button(f"{label}", key=f"v_{item['id']}", use_container_width=True):
                             st.session_state.cart.append({'item_name': item['item_name'], 'price': float(item['price']), 'qty': 1, 'is_coffee': item['is_coffee']})
                             st.rerun()
+                        c_pr.write(f"**{item['price']}**")
 
                 for base_name, items in grouped.items():
                     with cols[i % 4]:
-                        with st.container(border=True):
-                            # Əgər qrupdursa (məs: Americano S, M, L) -> Dialog aç
-                            if len(items) > 1:
-                                st.markdown(f"<div style='text-align:center; font-weight:bold;'>{base_name}</div>", unsafe_allow_html=True)
-                                st.caption(f"{len(items)} ölçü")
-                                if st.button("SEÇ", key=f"grp_{base_name}", use_container_width=True):
-                                    show_variants(base_name, items)
-                            else:
-                                # Tək məhsul
-                                item = items[0]
-                                st.markdown(f"<div style='text-align:center; font-weight:bold;'>{item['item_name']}</div>", unsafe_allow_html=True)
-                                st.markdown(f"<div style='text-align:center; color:orange;'>{item['price']} ₼</div>", unsafe_allow_html=True)
-                                if st.button("ƏLAVƏ ET", key=f"SNG_{item['id']}", use_container_width=True):
-                                    st.session_state.cart.append({'item_name': item['item_name'], 'price': float(item['price']), 'qty': 1, 'is_coffee': item['is_coffee']})
-                                    st.rerun()
+                        # NEW DESIGN CARD
+                        if len(items) > 1:
+                            st.markdown(f"<div class='pos-card-header'>{base_name}</div><div class='pos-card-body'>Seçim</div>", unsafe_allow_html=True)
+                            if st.button("SEÇ", key=f"grp_{base_name}", use_container_width=True):
+                                show_variants(base_name, items)
+                        else:
+                            item = items[0]
+                            st.markdown(f"<div class='pos-card-header'>{item['item_name']}</div><div class='pos-card-body'><div class='pos-price'>{item['price']} ₼</div></div>", unsafe_allow_html=True)
+                            if st.button("ƏLAVƏ ET", key=f"SNG_{item['id']}", use_container_width=True):
+                                st.session_state.cart.append({'item_name': item['item_name'], 'price': float(item['price']), 'qty': 1, 'is_coffee': item['is_coffee']})
+                                st.rerun()
                     i += 1
 
-    # --- TAB 2: ANBAR ---
     if role == 'admin':
-        with tabs[1]:
+        with tabs[1]: # Anbar
             st.subheader("📦 Anbar")
             c1, c2 = st.columns([1, 2])
             with c1:
-                st.markdown("#### Əməliyyat")
-                op = st.selectbox("Seç:", ["Artır/Yarat", "Sil"])
-                if op == "Artır/Yarat":
-                    with st.form("stk"):
-                        n = st.text_input("Ad"); q = st.number_input("Say"); u = st.selectbox("Vahid", ["gr","ml","ədəd"])
-                        c = st.selectbox("Kat", ["Bar","Süd","Sirop","Qablaşdırma","Digər"])
-                        l = st.number_input("Limit", 10.0)
-                        if st.form_submit_button("Yadda Saxla"):
-                            run_action("INSERT INTO ingredients (name,stock_qty,unit,category,min_limit) VALUES (:n,:q,:u,:c,:l) ON CONFLICT (name) DO UPDATE SET stock_qty=ingredients.stock_qty+:q", {"n":n,"q":q,"u":u,"c":c,"l":l})
-                            st.success("OK"); st.rerun()
-                else:
-                    dlist = run_query("SELECT name FROM ingredients")
-                    if not dlist.empty:
-                        d = st.selectbox("Silinəcək", dlist['name'])
-                        if st.button("Sil"): run_action("DELETE FROM ingredients WHERE name=:n",{"n":d}); st.rerun()
+                with st.form("stk"):
+                    st.markdown("**Stok Artır / Yarat**")
+                    n = st.text_input("Ad"); q = st.number_input("Say"); u = st.selectbox("Vahid", ["gr","ml","ədəd"]); c = st.selectbox("Kat", ["Bar","Süd","Sirop","Qablaşdırma"]); l = st.number_input("Limit", 10.0)
+                    if st.form_submit_button("Yadda Saxla"):
+                        run_action("INSERT INTO ingredients (name,stock_qty,unit,category,min_limit) VALUES (:n,:q,:u,:c,:l) ON CONFLICT (name) DO UPDATE SET stock_qty=ingredients.stock_qty+:q", {"n":n,"q":q,"u":u,"c":c,"l":l})
+                        st.success("OK"); st.rerun()
+                dlist = run_query("SELECT name FROM ingredients")
+                if not dlist.empty:
+                    d = st.selectbox("Silinəcək", dlist['name'])
+                    if st.button("Sil"): run_action("DELETE FROM ingredients WHERE name=:n",{"n":d}); st.rerun()
             with c2:
                 df = run_query("SELECT * FROM ingredients ORDER BY category, name")
                 if not df.empty:
-                    st.dataframe(df, use_container_width=True)
+                    for _, r in df.iterrows():
+                        cls = "stock-low" if r['stock_qty'] <= r['min_limit'] else "stock-ok"
+                        st.markdown(f"<div class='{cls}'><b>{r['name']}</b> ({r['category']}): {r['stock_qty']} {r['unit']}</div>", unsafe_allow_html=True)
 
-        # --- TAB 3: RESEPT ---
-        with tabs[2]:
+        with tabs[2]: # Resept
             st.subheader("📜 Reseptlər")
             c1, c2 = st.columns(2)
             with c1:
@@ -396,7 +428,6 @@ else:
                     if not rs.empty:
                         rid = st.selectbox("Silmək üçün ID", rs['id'])
                         if st.button("Sətri Sil"): run_action("DELETE FROM recipes WHERE id=:id", {"id":rid}); st.rerun()
-                    
                     st.divider()
                     ings = run_query("SELECT name FROM ingredients")
                     if not ings.empty:
@@ -407,169 +438,110 @@ else:
                                 run_action("INSERT INTO recipes (menu_item_name, ingredient_name, quantity_required) VALUES (:m,:i,:q)", {"m":p,"i":i,"q":q})
                                 st.rerun()
 
-        # --- TAB 4: ANALITIKA ---
-        with tabs[3]:
+        with tabs[3]: # Analitika
             st.subheader("📊 Analitika")
             df = run_query("SELECT * FROM sales ORDER BY created_at DESC LIMIT 100")
             if not df.empty:
-                st.metric("Son 100 Satış Cəmi", f"{df['total'].sum():.2f} ₼")
+                st.metric("Son 100 Satış", f"{df['total'].sum():.2f} ₼")
                 st.dataframe(df)
-            else: st.info("Satış yoxdur")
 
-        # --- TAB 5: CRM (NEW & FULL) ---
-        with tabs[4]:
-            st.subheader("👥 CRM & Müştərilər")
-            
-            # Customer List & Action
+        with tabs[4]: # CRM
+            st.subheader("👥 CRM")
             custs = run_query("SELECT * FROM customers")
             if not custs.empty:
                 st.dataframe(custs)
-                
-                st.divider()
-                st.markdown("#### 📢 Kampaniya Göndər")
-                
-                c_msg, c_btn = st.columns([3, 1])
-                msg = c_msg.text_area("Mesaj Mətni (Email & Bildiriş)", "Hörmətli müştəri, sizə özəl kampaniyamız var!")
-                if c_btn.button("Bütün Müştərilərə Göndər"):
-                    cnt = 0
-                    for _, row in custs.iterrows():
-                        if row['email']:
-                            send_email(row['email'], "Emalatxana Xəbərləri", msg)
-                            run_action("INSERT INTO notifications (card_id, message) VALUES (:id, :m)", {"id":row['card_id'], "m":msg})
-                            cnt += 1
-                    st.success(f"{cnt} müştəriyə göndərildi!")
-            else:
-                st.info("Hələ müştəri yoxdur.")
+                with st.form("crm_send"):
+                    msg = st.text_area("Mesaj")
+                    if st.form_submit_button("Hər kəsə göndər"):
+                        for _, r in custs.iterrows():
+                            if r['email']: send_email(r['email'], "Emalatxana", msg)
+                        st.success("Göndərildi!")
 
-        # --- TAB 6: MENYU (SMART IMPORT) ---
-        with tabs[5]:
-            st.subheader("📋 Menyu İdarəetməsi")
-            
-            with st.expander("📥 Excel Import (Ağıllı)", expanded=True):
-                strategy = st.radio("Dublikat Strategiyası:", 
-                                    ["Yenilə (Qiyməti dəyiş)", "Ötür (Yalnız yeniləri)", "Tam Təmizlə və Yaz"])
-                
-                up = st.file_uploader("Excel Faylı", type=['xlsx'])
+        with tabs[5]: # Menyu Import
+            st.subheader("📋 Menyu")
+            with st.expander("📥 Excel Import", expanded=True):
+                strat = st.radio("Strategiya", ["Yenilə", "Ötür", "Təmizlə və Yaz"])
+                up = st.file_uploader("Fayl", type=['xlsx'])
                 if up and st.button("Yüklə"):
                     try:
                         df = pd.read_excel(up)
-                        if 'item_name' not in df.columns: st.error("item_name sütunu yoxdur!"); st.stop()
-                        
-                        if strategy == "Tam Təmizlə və Yaz":
-                            run_action("DELETE FROM menu")
-                        
-                        cnt = 0
+                        if strat == "Təmizlə və Yaz": run_action("DELETE FROM menu")
+                        c = 0
                         for _, row in df.iterrows():
-                            nm = str(row['item_name']); pr = float(row['price']); cat = str(row['category'])
-                            is_cof = row.get('is_coffee', False)
-                            
-                            exists = not run_query("SELECT id FROM menu WHERE item_name=:n", {"n":nm}).empty
-                            
-                            if strategy == "Ötür (Yalnız yeniləri)" and exists: continue
-                            
-                            if strategy == "Yenilə (Qiyməti dəyiş)" and exists:
-                                run_action("UPDATE menu SET price=:p, category=:c WHERE item_name=:n", {"p":pr, "c":cat, "n":nm})
-                            else:
-                                run_action("INSERT INTO menu (item_name, price, category, is_active, is_coffee) VALUES (:n,:p,:c,TRUE,:ic)", 
-                                           {"n":nm, "p":pr, "c":cat, "ic":is_cof})
-                            cnt += 1
-                        st.success(f"{cnt} əməliyyat yerinə yetirildi!")
-                        time.sleep(1); st.rerun()
-                    except Exception as e: st.error(f"Xəta: {e}")
-
-            # Manual Add
-            with st.form("manual_menu"):
-                c1, c2 = st.columns(2)
-                n = c1.text_input("Ad"); p = c2.number_input("Qiymət")
-                cat = c1.text_input("Kateqoriya"); ic = c2.checkbox("Kofedir?")
+                            nm=row['item_name']; pr=row['price']; ct=row['category']; ic=row.get('is_coffee', False)
+                            ex = not run_query("SELECT id FROM menu WHERE item_name=:n", {"n":nm}).empty
+                            if strat=="Ötür" and ex: continue
+                            if strat=="Yenilə" and ex: run_action("UPDATE menu SET price=:p, category=:c WHERE item_name=:n", {"p":pr,"c":ct,"n":nm})
+                            else: run_action("INSERT INTO menu (item_name,price,category,is_active,is_coffee) VALUES (:n,:p,:c,TRUE,:ic)", {"n":nm,"p":pr,"c":ct,"ic":ic})
+                            c+=1
+                        st.success(f"{c} əməliyyat!")
+                    except Exception as e: st.error(str(e))
+            
+            with st.form("add_m"):
+                n = st.text_input("Ad"); p = st.number_input("Qiymət"); c = st.text_input("Kateqoriya"); ic = st.checkbox("Kofedir?")
                 if st.form_submit_button("Əlavə Et"):
-                    run_action("INSERT INTO menu (item_name, price, category, is_active, is_coffee) VALUES (:n,:p,:c,TRUE,:ic)", {"n":n,"p":p,"c":cat,"ic":ic})
-                    st.rerun()
+                    run_action("INSERT INTO menu (item_name,price,category,is_active,is_coffee) VALUES (:n,:p,:c,TRUE,:ic)", {"n":n,"p":p,"c":c,"ic":ic}); st.rerun()
+            
+            st.dataframe(run_query("SELECT * FROM menu ORDER BY category, item_name"))
 
-        # --- TAB 7: AYARLAR (FULL USER MGMT) ---
-        with tabs[6]:
-            st.subheader("⚙️ Ayarlar")
-            
-            st.markdown("#### 👥 İşçi İdarəetməsi")
+        with tabs[6]: # Ayarlar
+            st.subheader("⚙️ İşçi İdarəetməsi")
             users = run_query("SELECT username, role FROM users")
-            st.dataframe(users, use_container_width=True)
+            st.dataframe(users)
             
-            c_new, c_edit = st.columns(2)
-            
-            with c_new:
+            c1, c2 = st.columns(2)
+            with c1:
                 st.write("**Yeni İşçi**")
                 with st.form("new_u"):
-                    u = st.text_input("Login"); p = st.text_input("Pass"); r = st.selectbox("Role", ["staff", "admin"])
+                    u = st.text_input("Ad (Görünən)"); p = st.text_input("PIN (Şifrə)"); r = st.selectbox("Rol", ["staff", "admin"])
                     if st.form_submit_button("Yarat"):
-                        try:
-                            run_action("INSERT INTO users (username, password, role) VALUES (:u,:p,:r)", {"u":u,"p":hash_password(p),"r":r})
-                            st.success("Yaradıldı!"); st.rerun()
-                        except: st.error("Bu ad var!")
-            
-            with c_edit:
-                st.write("**Düzəliş / Silmə**")
-                target_u = st.selectbox("İşçi Seç", users['username'].tolist())
-                action = st.radio("Əməliyyat", ["Şifrə Dəyiş", "Sil"])
-                
-                if action == "Şifrə Dəyiş":
-                    np = st.text_input("Yeni Şifrə", type="password")
-                    if st.button("Dəyiş"):
-                        run_action("UPDATE users SET password=:p WHERE username=:u", {"p":hash_password(np), "u":target_u})
-                        st.success("Dəyişdirildi!")
+                        try: run_action("INSERT INTO users (username,password,role) VALUES (:u,:p,:r)", {"u":u,"p":hash_password(p),"r":r}); st.success("Oldu!")
+                        except: st.error("Bu ad var")
+            with c2:
+                st.write("**Sil / Şifrə**")
+                tu = st.selectbox("İşçi Seç", users['username'])
+                act = st.radio("Seç", ["Şifrə Dəyiş", "Sil"])
+                if act == "Şifrə Dəyiş":
+                    np = st.text_input("Yeni PIN")
+                    if st.button("Dəyiş"): run_action("UPDATE users SET password=:p WHERE username=:u", {"p":hash_password(np),"u":tu}); st.success("Dəyişdi!")
                 else:
-                    if st.button("❌ İSTİFADƏÇİNİ SİL", type="primary"):
-                        if target_u == 'admin': st.error("Admin silinə bilməz!")
-                        else:
-                            run_action("DELETE FROM users WHERE username=:u", {"u":target_u})
-                            st.success("Silindi!"); st.rerun()
+                    if st.button("SİL"):
+                        if tu == 'admin': st.error("Olmaz")
+                        else: run_action("DELETE FROM users WHERE username=:u", {"u":tu}); st.success("Silindi!"); st.rerun()
 
-        # --- TAB 8: ADMIN (BACKUP) ---
-        with tabs[7]:
-            st.subheader("🔧 Admin Tools")
-            if st.button("📥 Bütün Bazanı Yüklə (Backup)"):
+        with tabs[7]: # Admin
+            st.subheader("🔧 Admin")
+            if st.button("📥 FULL BACKUP (XLSX)"):
                 try:
                     out = BytesIO()
                     with pd.ExcelWriter(out, engine='xlsxwriter') as writer:
                         clean_df_for_excel(run_query("SELECT * FROM customers")).to_excel(writer, sheet_name='Customers')
                         clean_df_for_excel(run_query("SELECT * FROM sales")).to_excel(writer, sheet_name='Sales')
                         clean_df_for_excel(run_query("SELECT * FROM menu")).to_excel(writer, sheet_name='Menu')
+                        clean_df_for_excel(run_query("SELECT * FROM users")).to_excel(writer, sheet_name='Users')
                     st.download_button("⬇️ Backup.xlsx", out.getvalue(), "Backup.xlsx")
                 except Exception as e: st.error(e)
 
-        # --- TAB 9: QR (GENERATOR) ---
-        with tabs[8]:
-            st.subheader("🖨️ QR Generator")
-            st.info("Müştərilər və ya Termoslar üçün QR kodlar yaradın.")
-            
-            cnt = st.number_input("Neçə ədəd?", 1, 50)
-            is_th = st.checkbox("Termos QR-ı olsun? (Xüsusi endirim)")
-            
-            if st.button("QR Kodları Yarat"):
-                ids = [str(random.randint(10000000, 99999999)) for _ in range(cnt)]
-                zip_buffer = BytesIO(); has_multiple = cnt > 1
-                
+        with tabs[8]: # QR
+            st.subheader("🖨️ QR Generator (Green)")
+            cnt = st.number_input("Say", 1, 50)
+            kind = st.selectbox("Növ", ["Standard", "Termos", "Special 10%"])
+            if st.button("Yarat"):
+                zip_buffer = BytesIO(); has_mul = cnt > 1
                 with zipfile.ZipFile(zip_buffer, "w") as zf:
-                    for i in ids:
-                        # Create customer placeholder
-                        token = secrets.token_hex(8)
-                        ctype = "thermos" if is_th else "standard"
-                        run_action("INSERT INTO customers (card_id, stars, type, secret_token) VALUES (:i, 0, :t, :st)", {"i":i, "t":ctype, "st":token})
+                    for _ in range(cnt):
+                        i = str(random.randint(10000000, 99999999)); tok = secrets.token_hex(8)
+                        ctype = "thermos" if kind=="Termos" else "standard"
+                        run_action("INSERT INTO customers (card_id, stars, type, secret_token) VALUES (:i, 0, :t, :st)", {"i":i, "t":ctype, "st":tok})
                         
-                        if is_th:
-                            run_action("INSERT INTO customer_coupons (card_id, coupon_type) VALUES (:i, 'thermos_welcome')", {"i":i})
+                        if kind == "Termos": run_action("INSERT INTO customer_coupons (card_id, coupon_type) VALUES (:i, 'thermos_welcome')", {"i":i})
+                        elif kind == "Special 10%": run_action("INSERT INTO customer_coupons (card_id, coupon_type) VALUES (:i, 'disc_10')", {"i":i}) # disc_10 type needs logic in POS later
                         
-                        # Generate Image
-                        url = f"{APP_URL}/?id={i}&t={token}"
-                        img_data = generate_custom_qr(url, i)
+                        img_data = generate_custom_qr(f"{APP_URL}/?id={i}&t={tok}", i)
                         zf.writestr(f"QR_{i}.png", img_data)
-                        
-                        if not has_multiple:
-                            st.image(BytesIO(img_data), caption=f"ID: {i}", width=200)
-                            single_data = img_data
+                        if not has_mul: st.image(BytesIO(img_data), width=200); single=img_data
                 
-                if has_multiple:
-                    st.download_button("📥 ZIP Yüklə", zip_buffer.getvalue(), "qrcodes.zip", "application/zip")
-                else:
-                    st.download_button("⬇️ Şəkli Yüklə", single_data, f"{ids[0]}.png", "image/png")
+                if has_mul: st.download_button("📥 ZIP Yüklə", zip_buffer.getvalue(), "qrcodes.zip")
+                else: st.download_button("⬇️ PNG Yüklə", single, "qr.png")
 
     elif role == 'staff': render_pos()
