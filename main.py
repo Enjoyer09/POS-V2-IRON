@@ -12,21 +12,23 @@ from io import BytesIO
 import zipfile
 from PIL import Image, ImageDraw, ImageFont
 import requests
+from urllib.parse import urlparse, parse_qs 
 
 # ==========================================
-# === IRONWAVES POS - V2.0 STABLE ===
+# === IRONWAVES POS - V3.1 STABLE (DOMAIN FIXED) ===
 # ==========================================
 
-VERSION = "V2.0 Stable"
+VERSION = "v3.1 Stable"
 
-# --- INFRA (GLOBAL VARS) ---
+# --- CONFIG & GLOBALS ---
+st.set_page_config(page_title=f"Ironwaves POS {VERSION}", page_icon="☕", layout="wide", initial_sidebar_state="collapsed")
+
 RESEND_API_KEY = os.environ.get("RESEND_API_KEY")
-DOMAIN = "emalatxana.ironwaves.store" 
+
+# --- DÜZƏLİŞ BURADADIR ---
+DOMAIN = "demo.ironwaves.store" 
 APP_URL = f"https://{DOMAIN}"
 DEFAULT_SENDER_EMAIL = "info@ironwaves.store" 
-
-# --- CONFIG ---
-st.set_page_config(page_title=f"Ironwaves POS {VERSION}", page_icon="☕", layout="wide", initial_sidebar_state="collapsed")
 
 # --- CSS (ESTETİK DİZAYN & GİZLİ ELEMENTLƏR) ---
 st.markdown("""
@@ -34,17 +36,15 @@ st.markdown("""
     @import url('https://fonts.googleapis.com/css2?family=Oswald:wght@400;500;700;900&display=swap');
     .stApp { font-family: 'Oswald', sans-serif !important; background-color: #F4F6F9; }
     
-    /* GİZLƏDİLMİŞ HİSSƏLƏR */
+    /* GİZLİ HİSSƏLƏR */
     header {visibility: hidden;}
     #MainMenu {visibility: hidden;}
     footer {visibility: hidden;}
     [data-testid="stSidebar"] { display: none; }
     
-    /* PADDING SİL (FULL SCREEN) */
+    /* TAM EKRAN */
     .block-container {
-        padding-top: 1rem !important;
-        padding-bottom: 2rem !important;
-        max-width: 100% !important;
+        padding-top: 1rem !important; padding-bottom: 2rem !important; max-width: 100% !important;
     }
     
     /* NAVİQASİYA TABLARI */
@@ -58,7 +58,7 @@ st.markdown("""
         border-color: #FF6B35 !important; color: #FF6B35 !important; background-color: #FFF3E0 !important;
     }
     
-    /* POS MƏHSUL KARTI (RƏNGLİ) */
+    /* MƏHSUL KARTI */
     .pos-card-header {
         background: linear-gradient(135deg, #FF6B35, #FF8C00);
         color: white; padding: 8px; border-radius: 10px 10px 0 0; 
@@ -89,11 +89,11 @@ st.markdown("""
     .stock-card.low { border-left: 6px solid #E74C3C; background: #FFF5F5; }
     .stock-card.ok { border-left: 6px solid #2ECC71; }
     
-    /* CART & STATUS */
+    /* CART & FOOTER */
     .cart-item { background: white; border-radius: 8px; padding: 10px; margin-bottom: 5px; border: 1px solid #eee; display: flex; justify-content: space-between; align-items: center; box-shadow: 0 2px 4px rgba(0,0,0,0.02); }
     .footer { position: fixed; left: 0; bottom: 0; width: 100%; background: #eee; color: #777; text-align: center; padding: 2px; font-size: 10px; z-index: 999; }
     
-    /* KATALOQ SEÇİMİ (RADIO -> BUTTONS) */
+    /* KATALOQ */
     div[role="radiogroup"] > label > div:first-of-type { display: none; } 
     div[role="radiogroup"] { display: flex; gap: 8px; flex-wrap: wrap; }
     div[role="radiogroup"] > label {
@@ -106,21 +106,6 @@ st.markdown("""
     }
     </style>
 """, unsafe_allow_html=True)
-
-# --- MENYU DATASI ---
-FIXED_MENU_DATA = [
-    {'name': 'Su', 'price': 2.0, 'cat': 'İçkilər', 'is_coffee': False},
-    {'name': 'Çay (şirniyyat, fıstıq)', 'price': 3.0, 'cat': 'İçkilər', 'is_coffee': False},
-    {'name': 'Americano S', 'price': 3.9, 'cat': 'Qəhvə', 'is_coffee': True},
-    {'name': 'Americano M', 'price': 4.9, 'cat': 'Qəhvə', 'is_coffee': True},
-    {'name': 'Americano L', 'price': 5.9, 'cat': 'Qəhvə', 'is_coffee': True},
-    {'name': 'Cappuccino S', 'price': 4.5, 'cat': 'Qəhvə', 'is_coffee': True},
-    {'name': 'Cappuccino M', 'price': 5.5, 'cat': 'Qəhvə', 'is_coffee': True},
-    {'name': 'Cappuccino L', 'price': 6.5, 'cat': 'Qəhvə', 'is_coffee': True},
-    {'name': 'Latte S', 'price': 4.5, 'cat': 'Qəhvə', 'is_coffee': True},
-    {'name': 'Latte M', 'price': 5.5, 'cat': 'Qəhvə', 'is_coffee': True},
-    {'name': 'Latte L', 'price': 6.5, 'cat': 'Qəhvə', 'is_coffee': True},
-]
 
 # --- DB CONNECTION ---
 try:
@@ -225,7 +210,8 @@ def render_pos_interface():
     # --- LEFT: CART ---
     with c1:
         st.info("🧾 Çek")
-        # Müştəri (Sürətli Skan)
+        
+        # --- AĞILLI QR SKANER (FIXED) ---
         with st.form("scanner_form", clear_on_submit=True):
             col_in, col_go = st.columns([3, 1])
             qr_val = col_in.text_input("Müştəri Kartı", label_visibility="collapsed", placeholder="Skan edin...")
@@ -235,25 +221,46 @@ def render_pos_interface():
                 if qr_val:
                     try:
                         clean_input = qr_val.strip()
-                        if "id=" in clean_input: cid = clean_input.split("id=")[1].split("&")[0]
-                        else: cid = clean_input
+                        cid = clean_input
+                        
+                        # URL Parsinq (Ağıllı)
+                        if "http" in clean_input or "id=" in clean_input:
+                            try:
+                                parsed = urlparse(clean_input)
+                                qs = parse_qs(parsed.query)
+                                if 'id' in qs: cid = qs['id'][0]
+                            except: pass
+                        
+                        # DB Sorğusu
                         res = run_query("SELECT * FROM customers WHERE card_id=:id", {"id":cid})
+                        
                         if not res.empty: 
-                            st.session_state.current_customer = res.iloc[0].to_dict(); st.toast(f"✅ Müştəri: {cid}"); st.rerun()
-                        else: st.error(f"❌ Tapılmadı: {cid}")
-                    except: st.error("Xəta")
+                            st.session_state.current_customer = res.iloc[0].to_dict()
+                            st.toast(f"✅ Müştəri: {cid}")
+                            st.rerun()
+                        else: 
+                            st.error(f"❌ Tapılmadı! Axtarılan ID: {cid}")
+                    except Exception as e: 
+                        st.error(f"Sistem Xətası: {e}")
         
         if st.session_state.current_customer:
             c = st.session_state.current_customer
             st.success(f"👤 {c['card_id']} | ⭐ **{c['stars']}**")
             if st.button("Ləğv Et", use_container_width=True): st.session_state.current_customer = None; st.rerun()
 
-        # Səbət
+        # Cart
         if st.session_state.cart:
             tb = 0
             for i, it in enumerate(st.session_state.cart):
                 sub = it['qty'] * it['price']; tb += sub
-                st.markdown(f"""<div class="cart-item"><div style="flex:2; font-weight:bold;">{it['item_name']}</div><div style="flex:1;">{it['price']}</div><div style="flex:1; color:#E65100;">x{it['qty']}</div><div style="flex:1; text-align:right;">{sub:.1f}</div></div>""", unsafe_allow_html=True)
+                st.markdown(f"""
+                <div class="cart-item">
+                    <div style="flex:2; font-weight:bold;">{it['item_name']}</div>
+                    <div style="flex:1;">{it['price']}</div>
+                    <div style="flex:1; color:#E65100;">x{it['qty']}</div>
+                    <div style="flex:1; text-align:right;">{sub:.1f}</div>
+                </div>""", unsafe_allow_html=True)
+                
                 b1, b2, b3 = st.columns([1,1,4])
                 if b1.button("➖", key=f"m_{i}"):
                     if it['qty']>1: it['qty']-=1
@@ -304,7 +311,7 @@ def render_pos_interface():
                 else: gr[n] = [r]
             
             cols = st.columns(4); i=0
-            @st.dialog("Ölçü Seçimi")
+            @st.dialog("Variant Seçimi")
             def show_v(bn, its):
                 st.markdown(f"### {bn}")
                 for it in its:
@@ -421,7 +428,7 @@ else:
             with c1:
                 with st.form("stk"):
                     st.markdown("**Stok Artır**")
-                    n=st.text_input("Ad"); q=st.number_input("Say"); u=st.selectbox("Vahid",["gr","ml","ədəd"]); c=st.selectbox("Kat",["Bar","Süd","Sirop","Qablaşdırma","Təsərrüfat"])
+                    n=st.text_input("Ad"); q=st.number_input("Say"); u=st.selectbox("Vahid",["gr","ml","ədəd"]); c=st.selectbox("Kat",["Bar (Qəhvə/Çay)","Süd","Sirop","Qablaşdırma","Təsərrüfat"])
                     l=st.number_input("Limit", 10.0)
                     if st.form_submit_button("Yadda Saxla"):
                         run_action("INSERT INTO ingredients (name,stock_qty,unit,category,min_limit) VALUES (:n,:q,:u,:c,:l) ON CONFLICT (name) DO UPDATE SET stock_qty=ingredients.stock_qty+:q", {"n":n,"q":q,"u":u,"c":c,"l":l}); st.rerun()
