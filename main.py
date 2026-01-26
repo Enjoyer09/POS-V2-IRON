@@ -4,32 +4,39 @@ import pandas as pd
 from datetime import date
 import random
 import string
+import os  # Railway dəyişənlərini oxumaq üçün vacibdir
 
 # === KONFIQURASIYA ===
 st.set_page_config(page_title="IronWaves Kofe POS", layout="wide", page_icon="☕")
 
-# Neon.tech Connection String (Railway-də bunu Secrets bölməsinə əlavə edəcəyik)
-try:
-    DB_URL = st.secrets["DATABASE_URL"]
-except:
-    # Lokal test üçün bura öz stringinizi qoyun
-    DB_URL = "postgres://user:password@ep-sizinki.neon.tech/neondb?sslmode=require"
+# === DATABASE BAĞLANTISI ===
+# 1. Railway-də "DATABASE_URL" dəyişəni varsa, onu götürür.
+# 2. Əgər yoxdursa (lokal test edirsinizsə), ikinci dırnaq içindəki linki götürür.
+# VACİB: Aşağıdakı "postgres://..." yerinə öz REAL Neon.tech linkinizi yapışdırın ki, lokalda da işləsin.
+DB_URL = os.environ.get("DATABASE_URL", "postgres://user:password@ep-sizinki.neon.tech/neondb?sslmode=require")
 
-# === DATABASE FUNCTIONS ===
+# === DATABASE FUNKSİYALARI ===
 def run_query(query, params=None, fetch=False):
-    conn = psycopg2.connect(DB_URL)
-    cur = conn.cursor()
+    # Əgər DB_URL hələ təyin olunmayıbsa xəbərdarlıq et
+    if "ep-sizinki.neon.tech" in DB_URL:
+        st.error("XƏTA: Verilənlər bazası ünvanı düzgün deyil. Railway-də 'DATABASE_URL' dəyişənini təyin etdiyinizə əmin olun.")
+        st.stop()
+
     try:
+        conn = psycopg2.connect(DB_URL)
+        cur = conn.cursor()
         cur.execute(query, params)
         if fetch:
-            return cur.fetchall()
+            result = cur.fetchall()
+            conn.close()
+            return result
         conn.commit()
+        conn.close()
     except Exception as e:
         st.error(f"Verilənlər Bazası Xətası: {e}")
-    finally:
-        conn.close()
+        return None
 
-# === SESSION STATE ===
+# === SESSION STATE (Yaddaş) ===
 if 'logged_in' not in st.session_state:
     st.session_state.logged_in = False
 if 'user_role' not in st.session_state:
@@ -39,7 +46,7 @@ if 'user_name' not in st.session_state:
 if 'cart' not in st.session_state:
     st.session_state.cart = []
 
-# === PAGES ===
+# === SƏHİFƏLƏR ===
 
 def login_page():
     st.title("☕ GIDEONS COFFEE SHOP - Giriş")
@@ -116,11 +123,12 @@ def dashboard():
     if choice == "Çıxış":
         st.session_state.logged_in = False
         st.session_state.user_role = None
+        st.session_state.cart = []
         st.rerun()
         
     elif choice == "Ana Səhifə":
-        st.image("https://media.giphy.com/media/v1.Y2lkPTc5MGI3NjExbm9oMXZ6eW9oMXZ6eW9oMXZ6eW9oMXZ6eX/3o7TKrEzvLbsVAud8I/giphy.gif", width=300)
         st.header("İdarəetmə Panelinə Xoş Gəlmisiniz")
+        st.success(f"Sistem aktivdir. Xoş gəldiniz, {st.session_state.user_name}!")
         st.metric(label="Sistem Statusu", value="Aktiv", delta="Onlayn")
 
     elif choice == "Məhsullar":
@@ -138,7 +146,7 @@ def dashboard():
 def manage_products():
     st.header("Kofe Məhsullarını İdarə Et")
     
-    # Add New Product Form
+    # Yeni Məhsul Əlavə Etmə Forması
     with st.expander("Yeni Məhsul Əlavə Et"):
         c1, c2, c3 = st.columns(3)
         p_id = c1.text_input("Kofe ID")
@@ -155,7 +163,7 @@ def manage_products():
                       (p_id, p_name, p_type, p_stock, p_price, p_disc))
             st.success("Əlavə edildi!")
 
-    # View/Delete Products
+    # Məhsul Siyahısı
     st.subheader("Məhsul Siyahısı")
     data = run_query("SELECT * FROM Coffee_Category", fetch=True)
     if data:
@@ -171,9 +179,14 @@ def manage_products():
 def pos_system():
     st.header("Satış Nöqtəsi (POS)")
     
-    # 1. Select Product
+    # 1. Məhsul Seçimi
     products = run_query("SELECT coffee_name, coffee_price, in_stock FROM Coffee_Category", fetch=True)
-    p_names = [p[0] for p in products] if products else []
+    
+    if not products:
+        st.warning("Bazada məhsul yoxdur.")
+        return
+
+    p_names = [p[0] for p in products]
     
     c1, c2 = st.columns([2, 1])
     
@@ -182,7 +195,7 @@ def pos_system():
         qty = st.number_input("Miqdar", min_value=1, value=1)
         
         if st.button("Səbətə At"):
-            # Get details
+            # Detalları gətir
             for p in products:
                 if p[0] == selected_coffee:
                     price = p[1]
@@ -191,7 +204,7 @@ def pos_system():
                         st.session_state.cart.append({"name": selected_coffee, "qty": qty, "price": price, "total": price * qty})
                         st.success(f"{selected_coffee} əlavə edildi!")
                     else:
-                        st.error("Stokda kifayət qədər yoxdur!")
+                        st.error(f"Stokda kifayət qədər yoxdur! (Mövcud: {stock})")
                     break
 
     with c2:
@@ -214,16 +227,16 @@ def pos_system():
             cust_contact = st.text_input("Əlaqə Nömrəsi")
             
             if st.button("Qəbz Yarat"):
-                if cust_name and st.session_state.cart:
+                if cust_name:
                     bill_no = "BB" + ''.join(random.choices(string.ascii_uppercase + string.digits, k=8))
                     bill_date = str(date.today())
                     details = str(st.session_state.cart)
                     
-                    # Save to Inventory
+                    # Inventory-ə yaz
                     run_query("INSERT INTO Inventory (bill_number, date, cashier_name, contact, bill_details) VALUES (%s, %s, %s, %s, %s)",
                               (bill_no, bill_date, st.session_state.user_name, cust_contact, details))
                     
-                    # Update Stock
+                    # Stoku yenilə
                     for item in st.session_state.cart:
                         run_query("UPDATE Coffee_Category SET in_stock = in_stock - %s WHERE coffee_name = %s", (item['qty'], item['name']))
                     
@@ -238,6 +251,8 @@ def view_history():
     if data:
         df = pd.DataFrame(data, columns=['Qəbz #', 'Tarix', 'Kassir', 'Əlaqə', 'Detallar'])
         st.dataframe(df)
+    else:
+        st.info("Hələ heç bir satış olmayıb.")
 
 def manage_users():
     st.header("İstifadəçilərin İdarə Edilməsi (Admin)")
@@ -258,13 +273,12 @@ def manage_users():
             st.dataframe(pd.DataFrame(emps, columns=['ID', 'Ad', 'Login', 'Şifrə']))
 
     with tab2:
-        # Admin əlavə etmə funksiyası (ehtiyac varsa bura yaza bilərik)
-        st.write("Admin siyahısı burada görünəcək.")
+        st.write("Mövcud Adminlər:")
         admins = run_query("SELECT * FROM Admin_Account", fetch=True)
         if admins:
             st.dataframe(pd.DataFrame(admins, columns=['ID', 'Ad', 'Login', 'Şifrə']))
 
-# === MAIN ENTRY POINT ===
+# === PROQRAMIN GİRİŞ NÖQTƏSİ ===
 if __name__ == "__main__":
     if st.session_state.logged_in:
         dashboard()
