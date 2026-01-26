@@ -5,11 +5,11 @@ from datetime import date, datetime
 import random
 import string
 import os
-import ast # Mətn kimi saxlanılan siyahıları oxumaq üçün
-import plotly.express as px # Qrafiklər üçün
+import ast 
+import plotly.express as px
 
-# === VERSİYA KONFIQURASIYASI (V2.01 Alpha) ===
-st.set_page_config(page_title="IronWaves POS V2.01 Alpha", layout="wide", page_icon="☕")
+# === KONFIQURASIYA (Ad Dəyişdirildi) ===
+st.set_page_config(page_title="iRonwaves POS ALPHA LAB", layout="wide", page_icon="🧪")
 
 # === DATABASE BAĞLANTISI ===
 DB_URL = os.environ.get("DATABASE_URL", "postgres://user:password@ep-sizinki.neon.tech/neondb?sslmode=require")
@@ -44,142 +44,72 @@ if 'user_name' not in st.session_state:
 if 'cart' not in st.session_state:
     st.session_state.cart = []
 
-# === YENİ ANALİTİKA SƏHİFƏSİ (V2.01) ===
-def analytics_page():
-    st.title("📊 Biznes Analitikası")
-    st.markdown("Satışların detallı analizi və qrafiklər.")
-
-    # Bazadan bütün satışları çək
-    data = run_query("SELECT * FROM Inventory", fetch=True)
-    
-    if not data:
-        st.warning("Hələ heç bir satış məlumatı yoxdur.")
-        return
-
-    # DataFrame yaradılması
-    df = pd.DataFrame(data, columns=['Bill_No', 'Date', 'Cashier', 'Contact', 'Details'])
-    
-    # Detalları (string formatında olan listi) real məlumata çevirmək
-    all_sold_items = []
-    total_revenue = 0
-
-    for index, row in df.iterrows():
-        try:
-            # 'Details' sütunundakı mətni listə çeviririk
-            items = ast.literal_eval(row['Details'])
-            for item in items:
-                all_sold_items.append(item)
-                total_revenue += item['total']
-        except:
-            pass
-            
-    # Əsas Metriklər (KPI)
-    kpi1, kpi2, kpi3 = st.columns(3)
-    
-    with kpi1:
-        st.metric("💰 Ümumi Gəlir", f"${total_revenue:,.2f}")
-    with kpi2:
-        st.metric("🧾 Ümumi Sifarişlər", len(df))
-    with kpi3:
-        avg_order = total_revenue / len(df) if len(df) > 0 else 0
-        st.metric("📈 Orta Səbət Dəyəri", f"${avg_order:,.2f}")
-
-    st.divider()
-
-    # İki sütunlu qrafik sahəsi
-    col1, col2 = st.columns(2)
-
-    with col1:
-        st.subheader("📅 Günlük Satış Dinamikası")
-        # Tarixə görə qruplaşdırma
-        daily_sales = df.groupby('Date').size().reset_index(name='Sifariş Sayı')
-        fig_daily = px.bar(daily_sales, x='Date', y='Sifariş Sayı', color='Sifariş Sayı', 
-                           color_continuous_scale='Blues')
-        st.plotly_chart(fig_daily, use_container_width=True)
-
-    with col2:
-        st.subheader("🏆 Ən Çox Satılan Məhsullar")
-        if all_sold_items:
-            items_df = pd.DataFrame(all_sold_items)
-            # Məhsul adına görə qruplaşdırıb miqdarı cəmləyirik
-            top_products = items_df.groupby('name')['qty'].sum().reset_index().sort_values(by='qty', ascending=False)
-            
-            fig_pie = px.pie(top_products, values='qty', names='name', hole=0.4)
-            st.plotly_chart(fig_pie, use_container_width=True)
-        else:
-            st.info("Məhsul detalları tapılmadı.")
-
-    # Kassir Performansı
-    st.subheader("jh Kassir Performansı")
-    cashier_perf = df.groupby('Cashier').size().reset_index(name='Satış Sayı')
-    st.dataframe(cashier_perf, use_container_width=True)
-
-
-# === DİGƏR SƏHİFƏLƏR (Köhnə kodlar olduğu kimi qalır, sadəcə birləşdirilir) ===
+# === SƏHİFƏLƏR ===
 
 def login_page():
-    st.title("☕ GIDEONS COFFEE SHOP - Giriş")
-    col1, col2 = st.columns(2)
-    with col1:
-        st.subheader("Sistemə Giriş")
-        username = st.text_input("İstifadəçi adı")
-        password = st.text_input("Şifrə", type="password")
-        if st.button("Daxil ol"):
-            # Rollar üzrə yoxlama...
-            admin = run_query("SELECT * FROM Admin_Account WHERE admin_username=%s AND admin_password=%s", (username, password), fetch=True)
-            if admin:
-                st.session_state.logged_in = True
-                st.session_state.user_role = "admin"
-                st.session_state.user_name = admin[0][1]
-                st.rerun()
-            
-            emp = run_query("SELECT * FROM Employee_Account WHERE employee_username=%s AND employee_password=%s", (username, password), fetch=True)
-            if emp:
-                st.session_state.logged_in = True
-                st.session_state.user_role = "employee"
-                st.session_state.user_name = emp[0][1]
-                st.rerun()
-
-            guest = run_query("SELECT * FROM Guest_Account WHERE guest_username=%s AND guest_password=%s", (username, password), fetch=True)
-            if guest:
-                st.session_state.logged_in = True
-                st.session_state.user_role = "guest"
-                st.session_state.user_name = guest[0][1]
-                st.rerun()
-            st.error("Yanlış istifadəçi adı və ya şifrə")
-
+    st.markdown("<h1 style='text-align: center; color: #FF4B4B;'>🧪 iRonwaves POS ALPHA LAB</h1>", unsafe_allow_html=True)
+    st.markdown("<p style='text-align: center;'>Gələcəyin POS Sistemi - İndi Sizinlə</p>", unsafe_allow_html=True)
+    
+    col1, col2, col3 = st.columns([1, 2, 1])
+    
     with col2:
-        st.subheader("Qonaq Qeydiyyatı")
-        new_fullname = st.text_input("Tam Ad")
-        new_user = st.text_input("Yeni İstifadəçi adı")
-        new_pass = st.text_input("Yeni Şifrə", type="password")
-        if st.button("Hesab Yarat"):
-            run_query("INSERT INTO Guest_Account (guest_fullname, guest_username, guest_password) VALUES (%s, %s, %s)", 
-                      (new_fullname, new_user, new_pass))
-            st.success("Hesab yaradıldı!")
+        # st.form istifadə edirik ki, ENTER düyməsi işləsin
+        with st.form("login_form"):
+            st.subheader("Sistemə Giriş")
+            username = st.text_input("İstifadəçi adı")
+            password = st.text_input("Şifrə", type="password")
+            
+            # Form submit button (Enter vuranda bu işləyir)
+            submitted = st.form_submit_button("Daxil ol", use_container_width=True)
+            
+            if submitted:
+                # Admin Yoxlanışı
+                admin = run_query("SELECT * FROM Admin_Account WHERE admin_username=%s AND admin_password=%s", (username, password), fetch=True)
+                if admin:
+                    st.session_state.logged_in = True
+                    st.session_state.user_role = "admin"
+                    st.session_state.user_name = admin[0][1]
+                    st.rerun()
+                
+                # İşçi Yoxlanışı
+                emp = run_query("SELECT * FROM Employee_Account WHERE employee_username=%s AND employee_password=%s", (username, password), fetch=True)
+                if emp:
+                    st.session_state.logged_in = True
+                    st.session_state.user_role = "employee"
+                    st.session_state.user_name = emp[0][1]
+                    st.rerun()
+
+                # Qonaq Yoxlanışı
+                guest = run_query("SELECT * FROM Guest_Account WHERE guest_username=%s AND guest_password=%s", (username, password), fetch=True)
+                if guest:
+                    st.session_state.logged_in = True
+                    st.session_state.user_role = "guest"
+                    st.session_state.user_name = guest[0][1]
+                    st.rerun()
+                
+                st.error("⚠️ Yanlış istifadəçi adı və ya şifrə")
 
 def dashboard():
-    st.sidebar.title(f"👤 {st.session_state.user_name}")
+    st.sidebar.title(f"👨‍💻 {st.session_state.user_name}")
     
     rol_aze = {"admin": "Admin", "employee": "İşçi", "guest": "Qonaq"}
     gosterilen_rol = rol_aze.get(st.session_state.user_role, "Naməlum")
-    st.sidebar.text(f"Vəzifə: {gosterilen_rol}")
+    st.sidebar.caption(f"Status: {gosterilen_rol} | Versiya: v2.02 Alpha")
     
-    # Menyu Seçimləri
     menu_options = ["Ana Səhifə"]
     
     if st.session_state.user_role == "admin":
-        menu_options.append("📊 Analitika") # YENİ
+        menu_options.append("📊 Analitika")
     
     if st.session_state.user_role in ["admin", "employee"]:
         menu_options.extend(["POS (Satış)", "Məhsullar", "Tarixcə"])
     
     if st.session_state.user_role == "admin":
-        menu_options.append("İstifadəçiləri İdarə Et")
+        menu_options.append("İstifadəçilər")
         
     menu_options.append("Çıxış")
     
-    choice = st.sidebar.radio("Menyu", menu_options)
+    choice = st.sidebar.radio("Naviqasiya", menu_options)
     
     if choice == "Çıxış":
         st.session_state.logged_in = False
@@ -187,8 +117,12 @@ def dashboard():
         st.session_state.cart = []
         st.rerun()
     elif choice == "Ana Səhifə":
-        st.header("İdarəetmə Panelinə Xoş Gəlmisiniz")
-        st.metric(label="Sistem Statusu", value="V2.01 Alpha", delta="Stabil")
+        st.title("🧪 iRonwaves ALPHA LAB")
+        c1, c2, c3 = st.columns(3)
+        c1.metric("Server", "Neon.tech", "Online")
+        c2.metric("Framework", "Streamlit", "v1.40")
+        c3.metric("POS Status", "Active", "Stable")
+        st.image("https://media.giphy.com/media/Q81NcsY6YxK7jxnr4v/giphy.gif", width=600)
     elif choice == "📊 Analitika":
         analytics_page()
     elif choice == "Məhsullar":
@@ -197,91 +131,182 @@ def dashboard():
         pos_system()
     elif choice == "Tarixcə":
         view_history()
-        # Tarixcəni Analitika səhifəsinə yönləndirmək də olar, amma hələlik saxlayırıq
-        pass 
-    elif choice == "İstifadəçiləri İdarə Et":
+    elif choice == "İstifadəçilər":
         manage_users()
 
+def analytics_page():
+    st.title("📊 Biznes Analitikası")
+    data = run_query("SELECT * FROM Inventory", fetch=True)
+    if not data:
+        st.warning("Məlumat yoxdur.")
+        return
+
+    df = pd.DataFrame(data, columns=['Bill_No', 'Date', 'Cashier', 'Contact', 'Details'])
+    
+    all_sold_items = []
+    total_revenue = 0
+
+    for index, row in df.iterrows():
+        try:
+            items = ast.literal_eval(row['Details'])
+            for item in items:
+                all_sold_items.append(item)
+                total_revenue += item['total']
+        except:
+            pass
+            
+    kpi1, kpi2, kpi3 = st.columns(3)
+    kpi1.metric("💰 Ümumi Gəlir", f"${total_revenue:,.2f}")
+    kpi2.metric("🧾 Sifarişlər", len(df))
+    avg_order = total_revenue / len(df) if len(df) > 0 else 0
+    kpi3.metric("📈 Orta Səbət", f"${avg_order:,.2f}")
+
+    st.divider()
+    col1, col2 = st.columns(2)
+
+    with col1:
+        st.subheader("Günlük Satış")
+        daily_sales = df.groupby('Date').size().reset_index(name='Sifariş Sayı')
+        fig_daily = px.bar(daily_sales, x='Date', y='Sifariş Sayı', color='Sifariş Sayı', color_continuous_scale='Viridis')
+        st.plotly_chart(fig_daily, use_container_width=True)
+
+    with col2:
+        st.subheader("Top Məhsullar")
+        if all_sold_items:
+            items_df = pd.DataFrame(all_sold_items)
+            top_products = items_df.groupby('name')['qty'].sum().reset_index().sort_values(by='qty', ascending=False)
+            fig_pie = px.pie(top_products, values='qty', names='name', hole=0.4)
+            st.plotly_chart(fig_pie, use_container_width=True)
+
 def manage_products():
-    st.header("Kofe Məhsullarını İdarə Et")
-    with st.expander("Yeni Məhsul Əlavə Et"):
-        c1, c2, c3 = st.columns(3)
-        p_id = c1.text_input("Kofe ID")
-        p_name = c2.text_input("Ad")
-        p_type = c3.text_input("Növ")
-        c4, c5, c6 = st.columns(3)
-        p_stock = c4.number_input("Stok", min_value=0)
-        p_price = c5.number_input("Qiymət ($)", min_value=0.0)
-        p_disc = c6.number_input("Endirim (%)", min_value=0)
-        if st.button("Məhsulu Əlavə Et"):
-            run_query("INSERT INTO Coffee_Category VALUES (%s, %s, %s, %s, %s, %s)", (p_id, p_name, p_type, p_stock, p_price, p_disc))
-            st.success("Əlavə edildi!")
+    st.header("Məhsul İdarəetməsi")
+    with st.expander("➕ Yeni Məhsul Əlavə Et", expanded=False):
+        with st.form("add_product_form"):
+            c1, c2, c3 = st.columns(3)
+            p_id = c1.text_input("ID")
+            p_name = c2.text_input("Ad")
+            p_type = c3.text_input("Növ")
+            c4, c5, c6 = st.columns(3)
+            p_stock = c4.number_input("Stok", min_value=0)
+            p_price = c5.number_input("Qiymət ($)", min_value=0.0)
+            p_disc = c6.number_input("Endirim (%)", min_value=0)
+            
+            if st.form_submit_button("Yadda Saxla"):
+                run_query("INSERT INTO Coffee_Category VALUES (%s, %s, %s, %s, %s, %s)", (p_id, p_name, p_type, p_stock, p_price, p_disc))
+                st.success("Əlavə edildi!")
+                st.rerun()
             
     data = run_query("SELECT * FROM Coffee_Category", fetch=True)
     if data:
-        st.dataframe(pd.DataFrame(data, columns=['ID', 'Ad', 'Növ', 'Endirim', 'Stok', 'Qiymət']))
-        del_id = st.text_input("Silmək üçün ID")
-        if st.button("Sil") and del_id:
-            run_query("DELETE FROM Coffee_Category WHERE coffee_id=%s", (del_id,))
-            st.rerun()
+        st.dataframe(pd.DataFrame(data, columns=['ID', 'Ad', 'Növ', 'Endirim', 'Stok', 'Qiymət']), use_container_width=True)
+        
+        with st.form("delete_product_form"):
+            del_id = st.text_input("Silmək üçün ID")
+            if st.form_submit_button("Sil"):
+                run_query("DELETE FROM Coffee_Category WHERE coffee_id=%s", (del_id,))
+                st.warning("Silindi!")
+                st.rerun()
 
 def pos_system():
-    st.header("Satış Nöqtəsi (POS)")
+    st.header("🛒 Satış Terminalı")
     products = run_query("SELECT coffee_name, coffee_price, in_stock FROM Coffee_Category", fetch=True)
     if not products: return
     p_names = [p[0] for p in products]
     
-    c1, c2 = st.columns([2, 1])
+    c1, c2 = st.columns([1.5, 1])
+    
     with c1:
-        selected_coffee = st.selectbox("Kofe Seçin", p_names)
-        qty = st.number_input("Miqdar", min_value=1, value=1)
-        if st.button("Səbətə At"):
-            for p in products:
-                if p[0] == selected_coffee:
-                    if p[2] >= qty:
-                        st.session_state.cart.append({"name": selected_coffee, "qty": qty, "price": p[1], "total": p[1]*qty})
-                        st.success("Əlavə edildi!")
-                    else:
-                        st.error("Stok yoxdur!")
-                    break
+        st.subheader("Məhsul Seçimi")
+        # Buranı da form edirik ki, Enter işləsin
+        with st.form("add_to_cart_form"):
+            selected_coffee = st.selectbox("Kofe", p_names)
+            col_q1, col_q2 = st.columns(2)
+            qty = col_q1.number_input("Miqdar", min_value=1, value=1)
+            # Burada əlavə notlar (modifier) ideyası üçün yer
+            note = col_q2.text_input("Qeyd (məs: Şəkərsiz)")
+            
+            add_btn = st.form_submit_button("➕ Əlavə et (Enter)", use_container_width=True)
+            
+            if add_btn:
+                for p in products:
+                    if p[0] == selected_coffee:
+                        if p[2] >= qty:
+                            item_name = f"{selected_coffee} ({note})" if note else selected_coffee
+                            st.session_state.cart.append({"name": item_name, "raw_name": p[0], "qty": qty, "price": p[1], "total": p[1]*qty})
+                            st.success(f"{item_name} səbətdə!")
+                        else:
+                            st.error(f"Stok bitib! Qalıq: {p[2]}")
+                        break
+
     with c2:
+        st.subheader("🧾 Səbət")
         if st.session_state.cart:
-            df = pd.DataFrame(st.session_state.cart)
-            st.dataframe(df)
-            st.markdown(f"### Cəmi: ${sum(i['total'] for i in st.session_state.cart):,.2f}")
-            if st.button("Təmizlə"):
+            cart_df = pd.DataFrame(st.session_state.cart)
+            st.dataframe(cart_df[["name", "qty", "total"]], use_container_width=True, hide_index=True)
+            
+            total_bill = sum(item['total'] for item in st.session_state.cart)
+            st.markdown(f"<h3 style='text-align: right;'>Cəmi: ${total_bill:,.2f}</h3>", unsafe_allow_html=True)
+            
+            col_b1, col_b2 = st.columns(2)
+            if col_b1.button("🗑️ Təmizlə", use_container_width=True):
                 st.session_state.cart = []
                 st.rerun()
-            cust_name = st.text_input("Müştəri Adı")
-            cust_contact = st.text_input("Əlaqə")
-            if st.button("Qəbz Yarat") and cust_name:
-                bill_no = "BB" + ''.join(random.choices(string.ascii_uppercase + string.digits, k=8))
-                bill_date = str(date.today())
-                run_query("INSERT INTO Inventory VALUES (%s, %s, %s, %s, %s)", (bill_no, bill_date, st.session_state.user_name, cust_contact, str(st.session_state.cart)))
-                for item in st.session_state.cart:
-                    run_query("UPDATE Coffee_Category SET in_stock = in_stock - %s WHERE coffee_name = %s", (item['qty'], item['name']))
-                st.session_state.cart = []
-                st.success(f"Satış Uğurlu! #{bill_no}")
+            
+            with st.expander("Ödəniş və Qəbz", expanded=True):
+                cust_name = st.text_input("Müştəri Adı")
+                cust_contact = st.text_input("Əlaqə")
+                pay_method = st.selectbox("Ödəniş Növü", ["Nağd", "Kart", "Kaspi", "Apple Pay"])
+                
+                if st.button("✅ Satışı Tamamla", type="primary", use_container_width=True):
+                    if cust_name:
+                        bill_no = "BW-" + ''.join(random.choices(string.digits, k=6))
+                        bill_date = str(date.today())
+                        
+                        # Inventory-ə yaz
+                        details_str = str(st.session_state.cart) + f" | Method: {pay_method}"
+                        run_query("INSERT INTO Inventory (bill_number, date, cashier_name, contact, bill_details) VALUES (%s, %s, %s, %s, %s)",
+                                  (bill_no, bill_date, st.session_state.user_name, cust_contact, details_str))
+                        
+                        # Stoku yenilə
+                        for item in st.session_state.cart:
+                            run_query("UPDATE Coffee_Category SET in_stock = in_stock - %s WHERE coffee_name = %s", (item['qty'], item['raw_name']))
+                        
+                        st.session_state.cart = []
+                        st.balloons()
+                        st.success(f"Satış Uğurlu! Qəbz: #{bill_no}")
+                    else:
+                        st.warning("Müştəri adını daxil edin")
 
 def view_history():
     st.header("Əməliyyat Tarixcəsi")
-    data = run_query("SELECT * FROM Inventory", fetch=True)
-    if data: st.dataframe(pd.DataFrame(data, columns=['Qəbz', 'Tarix', 'Kassir', 'Əlaqə', 'Detallar']))
+    data = run_query("SELECT * FROM Inventory ORDER BY bill_number DESC", fetch=True)
+    if data: 
+        st.dataframe(pd.DataFrame(data, columns=['Qəbz', 'Tarix', 'Kassir', 'Əlaqə', 'Detallar']), use_container_width=True)
 
 def manage_users():
     st.header("İstifadəçi İdarəetməsi")
     t1, t2 = st.tabs(["İşçilər", "Adminlər"])
     with t1:
-        id = st.text_input("ID")
-        name = st.text_input("Ad")
-        user = st.text_input("Login")
-        pw = st.text_input("Pass")
-        if st.button("Əlavə et"):
-            run_query("INSERT INTO Employee_Account VALUES (%s, %s, %s, %s)", (id, name, user, pw))
-            st.success("Oldu!")
+        with st.form("add_emp"):
+            c1, c2 = st.columns(2)
+            id = c1.text_input("ID")
+            name = c2.text_input("Ad")
+            user = c1.text_input("Login")
+            pw = c2.text_input("Pass")
+            if st.form_submit_button("Əlavə et"):
+                run_query("INSERT INTO Employee_Account VALUES (%s, %s, %s, %s)", (id, name, user, pw))
+                st.success("Oldu!")
+                st.rerun()
+        
         data = run_query("SELECT * FROM Employee_Account", fetch=True)
         if data: st.dataframe(pd.DataFrame(data, columns=['ID', 'Ad', 'Login', 'Pass']))
 
+    with t2:
+        st.info("Adminlər burada görünür.")
+        admins = run_query("SELECT * FROM Admin_Account", fetch=True)
+        if admins: st.dataframe(pd.DataFrame(admins, columns=['ID', 'Ad', 'Login', 'Pass']))
+
+# === PROQRAMIN GİRİŞ NÖQTƏSİ ===
 if __name__ == "__main__":
     if st.session_state.logged_in:
         dashboard()
