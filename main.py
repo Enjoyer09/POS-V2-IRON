@@ -9,13 +9,13 @@ import secrets
 import datetime
 
 # ==========================================
-# === IRONWAVES POS - VERSION 2.3 BETA (SMART CART) ===
+# === IRONWAVES POS - VERSION 2.4 BETA (AUTO RECIPES) ===
 # ==========================================
 
 # --- CONFIG ---
-st.set_page_config(page_title="Ironwaves POS v2.3", page_icon="☕", layout="wide", initial_sidebar_state="expanded")
+st.set_page_config(page_title="Ironwaves POS v2.4", page_icon="☕", layout="wide", initial_sidebar_state="expanded")
 
-# --- MENYU DATASI (Fixed) ---
+# --- HAZIR MENYU DATASI ---
 FIXED_MENU_DATA = [
     {'name': 'Su', 'price': 2.0, 'cat': 'İçkilər', 'is_coffee': False},
     {'name': 'Çay (şirniyyat, fıstıq)', 'price': 3.0, 'cat': 'İçkilər', 'is_coffee': False},
@@ -59,20 +59,71 @@ FIXED_MENU_DATA = [
     {'name': 'Espresso L', 'price': 5.0, 'cat': 'Qəhvə', 'is_coffee': True}
 ]
 
+# --- HAZIR XAMMAL DATASI (STANDARD) ---
+INITIAL_INGREDIENTS = [
+    # Bar
+    {"name": "Kofe Dənəsi", "cat": "Bar (Qəhvə/Çay/Kakao)", "unit": "gr", "qty": 5000, "min": 1000},
+    {"name": "Kakao/Şokolad Tozu", "cat": "Bar (Qəhvə/Çay/Kakao)", "unit": "gr", "qty": 2000, "min": 500},
+    {"name": "Çay (Quru)", "cat": "Bar (Qəhvə/Çay/Kakao)", "unit": "gr", "qty": 1000, "min": 200},
+    # Süd
+    {"name": "Süd (Adi)", "cat": "Süd Məhsulları & Qaymaq", "unit": "ml", "qty": 20000, "min": 5000},
+    {"name": "Qaymaq (10-20%)", "cat": "Süd Məhsulları & Qaymaq", "unit": "ml", "qty": 5000, "min": 1000},
+    # Siroplar
+    {"name": "Sirop (Karamel)", "cat": "Siroplar & Souslar", "unit": "ml", "qty": 1000, "min": 200},
+    {"name": "Sirop (Vanil)", "cat": "Siroplar & Souslar", "unit": "ml", "qty": 1000, "min": 200},
+    # Qablaşdırma
+    {"name": "Stəkan S (Kağız)", "cat": "Qablaşdırma (Stəkan/Qapaq/Salfet)", "unit": "ədəd", "qty": 500, "min": 50},
+    {"name": "Stəkan M (Kağız)", "cat": "Qablaşdırma (Stəkan/Qapaq/Salfet)", "unit": "ədəd", "qty": 500, "min": 50},
+    {"name": "Stəkan L (Kağız)", "cat": "Qablaşdırma (Stəkan/Qapaq/Salfet)", "unit": "ədəd", "qty": 500, "min": 50},
+    {"name": "Stəkan XS (Espresso)", "cat": "Qablaşdırma (Stəkan/Qapaq/Salfet)", "unit": "ədəd", "qty": 200, "min": 20},
+    {"name": "Stəkan Plastik (Buzlu)", "cat": "Qablaşdırma (Stəkan/Qapaq/Salfet)", "unit": "ədəd", "qty": 300, "min": 50},
+    {"name": "Qapaq (Universal)", "cat": "Qablaşdırma (Stəkan/Qapaq/Salfet)", "unit": "ədəd", "qty": 1500, "min": 100},
+]
+
+# --- HAZIR RESEPT DATASI (SCA STANDARD) ---
+# Format: "Menu Item": {"Ing1": qty, "Ing2": qty...}
+INITIAL_RECIPES = {
+    # Espresso & Ristretto
+    "Espresso S": {"Kofe Dənəsi": 10, "Stəkan XS (Espresso)": 1},
+    "Espresso M": {"Kofe Dənəsi": 20, "Stəkan XS (Espresso)": 1}, # Double
+    "Ristretto S": {"Kofe Dənəsi": 10, "Stəkan XS (Espresso)": 1},
+    
+    # Americano
+    "Americano S": {"Kofe Dənəsi": 10, "Stəkan S (Kağız)": 1, "Qapaq (Universal)": 1},
+    "Americano M": {"Kofe Dənəsi": 20, "Stəkan M (Kağız)": 1, "Qapaq (Universal)": 1},
+    "Americano L": {"Kofe Dənəsi": 20, "Stəkan L (Kağız)": 1, "Qapaq (Universal)": 1},
+    
+    # Cappuccino (Süd: S-160ml, M-220ml, L-300ml)
+    "Cappuccino S": {"Kofe Dənəsi": 10, "Süd (Adi)": 160, "Stəkan S (Kağız)": 1, "Qapaq (Universal)": 1},
+    "Cappuccino M": {"Kofe Dənəsi": 20, "Süd (Adi)": 220, "Stəkan M (Kağız)": 1, "Qapaq (Universal)": 1},
+    "Cappuccino L": {"Kofe Dənəsi": 20, "Süd (Adi)": 300, "Stəkan L (Kağız)": 1, "Qapaq (Universal)": 1},
+    
+    # Latte (Süd: S-200ml, M-280ml, L-380ml)
+    "Latte S": {"Kofe Dənəsi": 10, "Süd (Adi)": 200, "Stəkan S (Kağız)": 1, "Qapaq (Universal)": 1},
+    "Latte M": {"Kofe Dənəsi": 20, "Süd (Adi)": 280, "Stəkan M (Kağız)": 1, "Qapaq (Universal)": 1},
+    "Latte L": {"Kofe Dənəsi": 20, "Süd (Adi)": 380, "Stəkan L (Kağız)": 1, "Qapaq (Universal)": 1},
+    
+    # Raf (Qaymaq: S-200ml, M-280ml, L-380ml + Sirop)
+    "Raf S": {"Kofe Dənəsi": 10, "Qaymaq (10-20%)": 200, "Sirop (Vanil)": 15, "Stəkan S (Kağız)": 1, "Qapaq (Universal)": 1},
+    "Raf M": {"Kofe Dənəsi": 20, "Qaymaq (10-20%)": 280, "Sirop (Vanil)": 25, "Stəkan M (Kağız)": 1, "Qapaq (Universal)": 1},
+    "Raf L": {"Kofe Dənəsi": 20, "Qaymaq (10-20%)": 380, "Sirop (Vanil)": 35, "Stəkan L (Kağız)": 1, "Qapaq (Universal)": 1},
+    
+    # Mocha (Süd + Şokolad)
+    "Mocha S": {"Kofe Dənəsi": 10, "Süd (Adi)": 180, "Kakao/Şokolad Tozu": 20, "Stəkan S (Kağız)": 1, "Qapaq (Universal)": 1},
+    "Mocha M": {"Kofe Dənəsi": 20, "Süd (Adi)": 260, "Kakao/Şokolad Tozu": 30, "Stəkan M (Kağız)": 1, "Qapaq (Universal)": 1},
+    
+    # Iced Drinks (Plastik Stəkan)
+    "Ice Americano M": {"Kofe Dənəsi": 20, "Stəkan Plastik (Buzlu)": 1},
+    "Iced Latte M": {"Kofe Dənəsi": 20, "Süd (Adi)": 180, "Stəkan Plastik (Buzlu)": 1},
+}
+
 # --- CSS ---
 st.markdown("""
     <style>
     @import url('https://fonts.googleapis.com/css2?family=Oswald:wght@400;500;700;900&display=swap');
     .stApp { font-family: 'Oswald', sans-serif !important; background-color: #FAFAFA; }
     div.stButton > button { border-radius: 12px !important; height: 50px !important; font-weight: bold !important; }
-    
-    /* CART STYLE */
-    .cart-item {
-        background: white; border-radius: 8px; padding: 10px; margin-bottom: 5px; 
-        border: 1px solid #eee; display: flex; justify-content: space-between; align-items: center;
-    }
-    
-    /* STOCK STATUS */
+    .cart-item { background: white; border-radius: 8px; padding: 10px; margin-bottom: 5px; border: 1px solid #eee; display: flex; justify-content: space-between; align-items: center; }
     .stock-ok { border-left: 5px solid green; padding: 10px; background: white; margin-bottom: 5px; border-radius: 5px; }
     .stock-low { border-left: 5px solid red; padding: 10px; background: #fff0f0; margin-bottom: 5px; border-radius: 5px; }
     </style>
@@ -97,7 +148,6 @@ def ensure_schema():
         s.execute(text("CREATE TABLE IF NOT EXISTS recipes (id SERIAL PRIMARY KEY, menu_item_name TEXT, ingredient_name TEXT, quantity_required DECIMAL(10,2));"))
         s.commit()
     
-    # Default Admin
     with conn.session as s:
         try:
             chk = s.execute(text("SELECT * FROM users WHERE username='admin'")).fetchone()
@@ -121,7 +171,7 @@ def verify_password(p, h):
 
 # --- SESSION ---
 if 'logged_in' not in st.session_state: st.session_state.logged_in = False
-if 'cart' not in st.session_state: st.session_state.cart = [] # List of dicts: {'item_name':.., 'price':.., 'qty':..}
+if 'cart' not in st.session_state: st.session_state.cart = []
 if 'selected_recipe_product' not in st.session_state: st.session_state.selected_recipe_product = None
 
 def check_session_token():
@@ -169,53 +219,35 @@ else:
         with tabs[0]:
             c1, c2 = st.columns([1.5, 3])
             
-            # --- SOL: SƏBƏT ---
             with c1:
                 st.info("🧾 Çek (Smart Səbət)")
                 if st.session_state.cart:
                     total_bill = 0
-                    
-                    # Cart Items Loop
                     for i, item in enumerate(st.session_state.cart):
                         item_total = item['qty'] * item['price']
                         total_bill += item_total
                         
-                        # Layout: Name | - | Qty | + | Total | X
                         c_nm, c_btn1, c_qty, c_btn2, c_pr, c_del = st.columns([3, 1, 1, 1, 1.5, 1])
-                        
                         c_nm.write(f"**{item['item_name']}**")
-                        
                         if c_btn1.button("➖", key=f"min_{i}"):
-                            if item['qty'] > 1:
-                                item['qty'] -= 1
-                            else:
-                                st.session_state.cart.pop(i)
+                            if item['qty'] > 1: item['qty'] -= 1
+                            else: st.session_state.cart.pop(i)
                             st.rerun()
-                            
                         c_qty.write(f"{item['qty']}")
-                        
-                        if c_btn2.button("➕", key=f"pls_{i}"):
-                            item['qty'] += 1
-                            st.rerun()
-                            
+                        if c_btn2.button("➕", key=f"pls_{i}"): item['qty'] += 1; st.rerun()
                         c_pr.write(f"{item_total:.1f}")
-                        
-                        if c_del.button("🗑️", key=f"del_{i}"):
-                            st.session_state.cart.pop(i)
-                            st.rerun()
-                        
+                        if c_del.button("🗑️", key=f"del_{i}"): st.session_state.cart.pop(i); st.rerun()
                         st.markdown("---")
 
                     st.markdown(f"<h3 style='text-align:right; color:#2E7D32'>YEKUN: {total_bill:.2f} ₼</h3>", unsafe_allow_html=True)
                     
                     if st.button("✅ SATIŞI TƏSDİQLƏ", type="primary", use_container_width=True):
                         try:
-                            # 1. Satışı Yaz (Məs: Latte x2, Su x1)
                             items_str = ", ".join([f"{x['item_name']} x{x['qty']}" for x in st.session_state.cart])
                             run_action("INSERT INTO sales (items, total, payment_method, cashier, created_at) VALUES (:i, :t, 'Cash', :c, NOW())", 
                                        {"i":items_str, "t":total_bill, "c":st.session_state.user})
                             
-                            # 2. Stokdan Sil (Resept * Say)
+                            # STOKDAN SİLMƏ
                             log = []
                             with conn.session as s:
                                 for item in st.session_state.cart:
@@ -223,8 +255,7 @@ else:
                                     if recipes:
                                         for r in recipes:
                                             ing_name = r[0]
-                                            qty_needed = float(r[1]) * int(item['qty']) # Smart Logic: 1 Latte uses 200ml milk, 3 Lattes use 600ml
-                                            
+                                            qty_needed = float(r[1]) * int(item['qty']) 
                                             s.execute(text("UPDATE ingredients SET stock_qty = stock_qty - :q WHERE name = :n"), {"q":qty_needed, "n":ing_name})
                                             log.append(f"{ing_name}: -{qty_needed}")
                                 s.commit()
@@ -234,73 +265,49 @@ else:
                             st.success("Satıldı!")
                             time.sleep(1); st.rerun()
                         except Exception as e: st.error(f"Xəta: {e}")
-                else:
-                    st.warning("Səbət boşdur")
+                else: st.warning("Səbət boşdur")
 
-            # --- SAĞ: MƏHSULLAR ---
             with c2:
                 cats = run_query("SELECT DISTINCT category FROM menu WHERE is_active=TRUE")
                 if not cats.empty:
                     cat_list = ["Hamısı"] + sorted(cats['category'].tolist())
                     sel_cat = st.radio("Kataloq", cat_list, horizontal=True)
-                    
                     sql = "SELECT * FROM menu WHERE is_active=TRUE"
                     params = {}
                     if sel_cat != "Hamısı":
                         sql += " AND category=:c"
                         params["c"] = sel_cat
                     sql += " ORDER BY price ASC"
-                    
                     prods = run_query(sql, params)
                     cols = st.columns(4)
                     for idx, row in prods.iterrows():
                         with cols[idx % 4]:
                             if st.button(f"{row['item_name']}\n{row['price']}₼", key=f"p{row['id']}", use_container_width=True):
-                                # SMART ADD: Check if exists
                                 existing = next((x for x in st.session_state.cart if x['item_name'] == row['item_name']), None)
-                                if existing:
-                                    existing['qty'] += 1
-                                else:
-                                    st.session_state.cart.append({'item_name': row['item_name'], 'price': float(row['price']), 'qty': 1})
+                                if existing: existing['qty'] += 1
+                                else: st.session_state.cart.append({'item_name': row['item_name'], 'price': float(row['price']), 'qty': 1})
                                 st.rerun()
 
         # --- TAB 2: ANBAR ---
         with tabs[1]:
             st.subheader("📦 Anbarın İdarə Edilməsi")
-            
-            # YENİ AĞILLI KATEQORİYALAR
-            SMART_CATS = [
-                "Bar (Qəhvə/Çay/Kakao)", 
-                "Süd Məhsulları & Qaymaq", 
-                "Siroplar & Souslar", 
-                "Qablaşdırma (Stəkan/Qapaq/Salfet)", 
-                "Hazır Məhsul (İçki/Desert)",
-                "Meyvə & Tərəvəz",
-                "Təsərrüfat & Təmizlik"
-            ]
-            
             c_add, c_list = st.columns([1, 2])
-            
             with c_add:
                 st.markdown("#### ➕ / ➖ İdarəetmə")
                 mode = st.radio("Əməliyyat:", ["Əlavə Et / Artır", "Sil (Delete)"])
-                
                 if mode == "Əlavə Et / Artır":
                     with st.form("add_ing_form"):
                         name = st.text_input("Xammal Adı (Unikal)")
-                        cat = st.selectbox("Kateqoriya", SMART_CATS)
+                        cat = st.selectbox("Kateqoriya", ["Bar (Qəhvə/Çay/Kakao)", "Süd Məhsulları & Qaymaq", "Siroplar & Souslar", "Qablaşdırma (Stəkan/Qapaq/Salfet)", "Hazır Məhsul", "Təsərrüfat"])
                         qty = st.number_input("Miqdar", min_value=0.0)
                         unit = st.selectbox("Vahid", ["gr", "ml", "ədəd", "kq", "litr"])
                         limit = st.number_input("Kritik Limit", value=10.0)
                         if st.form_submit_button("Yadda Saxla"):
                             try:
-                                run_action("""
-                                    INSERT INTO ingredients (name, stock_qty, unit, category, min_limit) 
-                                    VALUES (:n, :q, :u, :c, :l) 
-                                    ON CONFLICT (name) DO UPDATE SET stock_qty = ingredients.stock_qty + :q, category = :c
-                                    """, {"n":name, "q":qty, "u":unit, "c":cat, "l":limit})
-                                st.success(f"{name} uğurla yeniləndi!")
-                                st.rerun()
+                                run_action("""INSERT INTO ingredients (name, stock_qty, unit, category, min_limit) VALUES (:n, :q, :u, :c, :l) 
+                                    ON CONFLICT (name) DO UPDATE SET stock_qty = ingredients.stock_qty + :q, category = :c""", 
+                                    {"n":name, "q":qty, "u":unit, "c":cat, "l":limit})
+                                st.success("Yeniləndi!"); st.rerun()
                             except Exception as e: st.error(str(e))
                 else:
                     del_ing_list = run_query("SELECT name FROM ingredients")
@@ -309,8 +316,7 @@ else:
                             to_del = st.selectbox("Silinəcək Xammal", del_ing_list['name'].tolist())
                             if st.form_submit_button("Bazadan Sil"):
                                 run_action("DELETE FROM ingredients WHERE name=:n", {"n":to_del})
-                                st.warning(f"{to_del} silindi!")
-                                st.rerun()
+                                st.warning("Silindi!"); st.rerun()
 
             with c_list:
                 st.markdown("#### 📊 Anbar Vəziyyəti")
@@ -319,23 +325,13 @@ else:
                     for _, row in ing_df.iterrows():
                         color_cls = "stock-low" if row['stock_qty'] <= row['min_limit'] else "stock-ok"
                         msg = "⚠️ BİTİR!" if row['stock_qty'] <= row['min_limit'] else "✅"
-                        st.markdown(f"""
-                        <div class="{color_cls}">
-                            <div style="display:flex; justify-content:space-between;">
-                                <span><b>{row['name']}</b> <i style="color:#666">({row['category']})</i></span>
-                                <span>{row['stock_qty']} {row['unit']}</span>
-                            </div>
-                            <div style="font-size:12px; color:gray;">Min: {row['min_limit']} | {msg}</div>
-                        </div>
-                        """, unsafe_allow_html=True)
-                else:
-                    st.info("Anbar boşdur.")
+                        st.markdown(f"<div class='{color_cls}'><div style='display:flex; justify-content:space-between;'><span><b>{row['name']}</b> <i style='color:#666'>({row['category']})</i></span><span>{row['stock_qty']} {row['unit']}</span></div><div style='font-size:12px; color:gray;'>Min: {row['min_limit']} | {msg}</div></div>", unsafe_allow_html=True)
+                else: st.info("Anbar boşdur.")
 
         # --- TAB 3: RESEPT ---
         with tabs[2]:
             st.subheader("📜 Məhsul Reseptləri")
             c_sel, c_build = st.columns([1, 2])
-            
             with c_sel:
                 menu_items = run_query("SELECT item_name FROM menu WHERE is_active=TRUE")
                 if not menu_items.empty:
@@ -347,7 +343,6 @@ else:
                 prod_name = st.session_state.selected_recipe_product
                 if prod_name:
                     st.markdown(f"#### 🛠️ {prod_name} tərkibi:")
-                    
                     curr_recipe = run_query("SELECT id, ingredient_name, quantity_required FROM recipes WHERE menu_item_name=:m", {"m":prod_name})
                     if not curr_recipe.empty:
                         st.table(curr_recipe)
@@ -356,7 +351,6 @@ else:
                             run_action("DELETE FROM recipes WHERE id=:id", {"id":del_rec_id})
                             st.rerun()
                     else: st.info("Resept yoxdur.")
-
                     st.divider()
                     all_ings = run_query("SELECT name, unit FROM ingredients ORDER BY name")
                     if not all_ings.empty:
@@ -368,44 +362,56 @@ else:
                             if st.form_submit_button("Əlavə Et"):
                                 run_action("INSERT INTO recipes (menu_item_name, ingredient_name, quantity_required) VALUES (:m, :i, :q)",
                                            {"m":prod_name, "i":sel_ing_row, "q":qty_req})
-                                st.success("Əlavə edildi!")
-                                st.rerun()
+                                st.success("Əlavə edildi!"); st.rerun()
 
         # --- TAB 4: MENYU ---
         with tabs[3]:
             st.subheader("📋 Menyu")
-            with st.expander("🔄 Standart Menyunu Yüklə (Reset)", expanded=True):
-                st.warning("DİQQƏT: Köhnə menyu silinəcək!")
-                if st.button("Yüklə"):
-                    run_action("DELETE FROM menu")
-                    count = 0
-                    for item in FIXED_MENU_DATA:
-                        run_action("""
-                            INSERT INTO menu (item_name, price, category, is_active, is_coffee) 
-                            VALUES (:n, :p, :c, TRUE, :ic)
-                            """, {"n":item['name'], "p":item['price'], "c":item['cat'], "ic":item['is_coffee']})
-                        count += 1
-                    st.success(f"{count} məhsul yükləndi!")
-                    time.sleep(1); st.rerun()
-            
-            with st.expander("➕ Tək Məhsul Əlavə Et"):
-                with st.form("single_add"):
-                    n = st.text_input("Ad")
-                    p = st.number_input("Qiymət", min_value=0.0)
-                    c = st.text_input("Kateqoriya")
-                    if st.form_submit_button("Əlavə Et"):
-                        run_action("INSERT INTO menu (item_name, price, category, is_active) VALUES (:n, :p, :c, TRUE)", {"n":n, "p":p, "c":c})
-                        st.rerun()
-
             m = run_query("SELECT * FROM menu ORDER BY category, item_name")
             st.dataframe(m, use_container_width=True)
 
-        # --- TAB 5: AYARLAR ---
+        # --- TAB 5: AYARLAR (AUTO SETUP) ---
         with tabs[4]:
+            st.subheader("⚙️ Sistemi Sıfırla & Hazırla")
+            
+            with st.expander("🛠️ Standart Anbar və Reseptləri Yüklə (Reset)", expanded=True):
+                st.warning("DİQQƏT: Bu əməliyyat Menyu, Anbar və Reseptləri silib, standart (SCA) versiyaları yazacaq!")
+                if st.button("🚀 BÜTÜN SİSTEMİ QUR (AUTO-SETUP)"):
+                    try:
+                        # 1. Clear Tables
+                        run_action("DELETE FROM recipes")
+                        run_action("DELETE FROM ingredients")
+                        run_action("DELETE FROM menu")
+                        
+                        # 2. Insert Menu
+                        mc = 0
+                        for item in FIXED_MENU_DATA:
+                            run_action("INSERT INTO menu (item_name, price, category, is_active, is_coffee) VALUES (:n, :p, :c, TRUE, :ic)", 
+                                       {"n":item['name'], "p":item['price'], "c":item['cat'], "ic":item['is_coffee']})
+                            mc += 1
+                            
+                        # 3. Insert Ingredients
+                        ic = 0
+                        for ing in INITIAL_INGREDIENTS:
+                            run_action("INSERT INTO ingredients (name, stock_qty, unit, category, min_limit) VALUES (:n, :q, :u, :c, :l)",
+                                       {"n":ing['name'], "q":ing['qty'], "u":ing['unit'], "c":ing['cat'], "l":ing['min']})
+                            ic += 1
+                            
+                        # 4. Insert Recipes
+                        rc = 0
+                        for menu_item, rec_data in INITIAL_RECIPES.items():
+                            for ing_name, qty in rec_data.items():
+                                run_action("INSERT INTO recipes (menu_item_name, ingredient_name, quantity_required) VALUES (:m, :i, :q)",
+                                           {"m":menu_item, "i":ing_name, "q":qty})
+                                rc += 1
+                                
+                        st.success(f"✅ Sistem Hazırdır! ({mc} məhsul, {ic} xammal, {rc} resept sətri yükləndi)")
+                        time.sleep(2); st.rerun()
+                    except Exception as e: st.error(f"Xəta: {e}")
+
             if st.button("Çıxış"):
                 run_action("DELETE FROM active_sessions WHERE token=:t", {"t":st.query_params.get("token")})
                 st.session_state.logged_in = False
                 st.rerun()
 
-    elif role == 'staff':
-        st.warning("Staff Rejimi")
+    elif role == 'staff': st.warning("Staff Rejimi")
