@@ -9,13 +9,13 @@ import secrets
 import datetime
 
 # ==========================================
-# === IRONWAVES POS - VERSION 2.2.1 BETA (HOTFIX) ===
+# === IRONWAVES POS - VERSION 2.3 BETA (SMART CART) ===
 # ==========================================
 
 # --- CONFIG ---
-st.set_page_config(page_title="Ironwaves POS v2.2", page_icon="☕", layout="wide", initial_sidebar_state="expanded")
+st.set_page_config(page_title="Ironwaves POS v2.3", page_icon="☕", layout="wide", initial_sidebar_state="expanded")
 
-# --- DÜZƏLDİLMİŞ MENYU DATASI ---
+# --- MENYU DATASI (Fixed) ---
 FIXED_MENU_DATA = [
     {'name': 'Su', 'price': 2.0, 'cat': 'İçkilər', 'is_coffee': False},
     {'name': 'Çay (şirniyyat, fıstıq)', 'price': 3.0, 'cat': 'İçkilər', 'is_coffee': False},
@@ -64,7 +64,15 @@ st.markdown("""
     <style>
     @import url('https://fonts.googleapis.com/css2?family=Oswald:wght@400;500;700;900&display=swap');
     .stApp { font-family: 'Oswald', sans-serif !important; background-color: #FAFAFA; }
-    div.stButton > button { border-radius: 12px !important; height: 60px !important; font-weight: bold !important; }
+    div.stButton > button { border-radius: 12px !important; height: 50px !important; font-weight: bold !important; }
+    
+    /* CART STYLE */
+    .cart-item {
+        background: white; border-radius: 8px; padding: 10px; margin-bottom: 5px; 
+        border: 1px solid #eee; display: flex; justify-content: space-between; align-items: center;
+    }
+    
+    /* STOCK STATUS */
     .stock-ok { border-left: 5px solid green; padding: 10px; background: white; margin-bottom: 5px; border-radius: 5px; }
     .stock-low { border-left: 5px solid red; padding: 10px; background: #fff0f0; margin-bottom: 5px; border-radius: 5px; }
     </style>
@@ -78,9 +86,8 @@ try:
     conn = st.connection("neon", type="sql", url=db_url, pool_pre_ping=True)
 except Exception as e: st.error(f"DB Error: {e}"); st.stop()
 
-# --- SCHEMA (HOTFIX APPLIED) ---
+# --- SCHEMA ---
 def ensure_schema():
-    # 1. TƏHLÜKƏSİZ YARATMA (Standard Tables)
     with conn.session as s:
         s.execute(text("CREATE TABLE IF NOT EXISTS menu (id SERIAL PRIMARY KEY, item_name TEXT, price DECIMAL(10,2), category TEXT, is_active BOOLEAN DEFAULT FALSE, is_coffee BOOLEAN DEFAULT FALSE);"))
         s.execute(text("CREATE TABLE IF NOT EXISTS sales (id SERIAL PRIMARY KEY, items TEXT, total DECIMAL(10,2), payment_method TEXT, cashier TEXT, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP);"))
@@ -89,16 +96,8 @@ def ensure_schema():
         s.execute(text("CREATE TABLE IF NOT EXISTS ingredients (id SERIAL PRIMARY KEY, name TEXT UNIQUE, stock_qty DECIMAL(10,2) DEFAULT 0, unit TEXT, category TEXT, min_limit DECIMAL(10,2) DEFAULT 10);"))
         s.execute(text("CREATE TABLE IF NOT EXISTS recipes (id SERIAL PRIMARY KEY, menu_item_name TEXT, ingredient_name TEXT, quantity_required DECIMAL(10,2));"))
         s.commit()
-
-    # 2. MIGRATIONS (Ayrı tranzaksiyalarda)
-    with conn.session as s:
-        try:
-            s.execute(text("ALTER TABLE menu ADD COLUMN is_coffee BOOLEAN DEFAULT FALSE;"))
-            s.commit()
-        except Exception:
-            s.rollback() # Sütun artıq varsa, rollback et və davam et
-
-    # 3. ADMIN CHECK (Təmiz tranzaksiya)
+    
+    # Default Admin
     with conn.session as s:
         try:
             chk = s.execute(text("SELECT * FROM users WHERE username='admin'")).fetchone()
@@ -106,9 +105,7 @@ def ensure_schema():
                 p_hash = bcrypt.hashpw("admin123".encode(), bcrypt.gensalt()).decode()
                 s.execute(text("INSERT INTO users (username, password, role) VALUES ('admin', :p, 'admin')"), {"p": p_hash})
                 s.commit()
-        except Exception as e:
-            s.rollback()
-            st.error(f"Admin check error: {e}")
+        except: s.rollback()
 
 ensure_schema()
 
@@ -124,7 +121,7 @@ def verify_password(p, h):
 
 # --- SESSION ---
 if 'logged_in' not in st.session_state: st.session_state.logged_in = False
-if 'cart' not in st.session_state: st.session_state.cart = []
+if 'cart' not in st.session_state: st.session_state.cart = [] # List of dicts: {'item_name':.., 'price':.., 'qty':..}
 if 'selected_recipe_product' not in st.session_state: st.session_state.selected_recipe_product = None
 
 def check_session_token():
@@ -166,30 +163,59 @@ else:
     st.markdown(f"### 👤 {st.session_state.user} | {st.session_state.role.upper()}")
     
     if st.session_state.role == 'admin':
-        tabs = st.tabs(["🛒 POS", "📦 Stok (Anbar)", "📜 Resept Qurucusu", "📋 Menyu (Data)", "⚙️ Ayarlar"])
+        tabs = st.tabs(["🛒 Smart POS", "📦 Anbar (Stok)", "📜 Reseptlər", "📋 Menyu", "⚙️ Ayarlar"])
         
-        # --- TAB 1: POS (Satış) ---
+        # --- TAB 1: SMART POS ---
         with tabs[0]:
             c1, c2 = st.columns([1.5, 3])
+            
+            # --- SOL: SƏBƏT ---
             with c1:
-                st.info("🧾 Çek")
+                st.info("🧾 Çek (Smart Səbət)")
                 if st.session_state.cart:
-                    for i, item in enumerate(st.session_state.cart):
-                        cc1, cc2, cc3 = st.columns([3, 1, 1])
-                        cc1.write(f"**{item['item_name']}**")
-                        cc2.write(f"{item['price']}")
-                        if cc3.button("x", key=f"d{i}"): st.session_state.cart.pop(i); st.rerun()
+                    total_bill = 0
                     
-                    total = sum(x['price'] for x in st.session_state.cart)
-                    st.markdown(f"### CƏM: {total:.2f} ₼")
+                    # Cart Items Loop
+                    for i, item in enumerate(st.session_state.cart):
+                        item_total = item['qty'] * item['price']
+                        total_bill += item_total
+                        
+                        # Layout: Name | - | Qty | + | Total | X
+                        c_nm, c_btn1, c_qty, c_btn2, c_pr, c_del = st.columns([3, 1, 1, 1, 1.5, 1])
+                        
+                        c_nm.write(f"**{item['item_name']}**")
+                        
+                        if c_btn1.button("➖", key=f"min_{i}"):
+                            if item['qty'] > 1:
+                                item['qty'] -= 1
+                            else:
+                                st.session_state.cart.pop(i)
+                            st.rerun()
+                            
+                        c_qty.write(f"{item['qty']}")
+                        
+                        if c_btn2.button("➕", key=f"pls_{i}"):
+                            item['qty'] += 1
+                            st.rerun()
+                            
+                        c_pr.write(f"{item_total:.1f}")
+                        
+                        if c_del.button("🗑️", key=f"del_{i}"):
+                            st.session_state.cart.pop(i)
+                            st.rerun()
+                        
+                        st.markdown("---")
+
+                    st.markdown(f"<h3 style='text-align:right; color:#2E7D32'>YEKUN: {total_bill:.2f} ₼</h3>", unsafe_allow_html=True)
                     
                     if st.button("✅ SATIŞI TƏSDİQLƏ", type="primary", use_container_width=True):
                         try:
-                            items_str = ", ".join([x['item_name'] for x in st.session_state.cart])
+                            # 1. Satışı Yaz (Məs: Latte x2, Su x1)
+                            items_str = ", ".join([f"{x['item_name']} x{x['qty']}" for x in st.session_state.cart])
                             run_action("INSERT INTO sales (items, total, payment_method, cashier, created_at) VALUES (:i, :t, 'Cash', :c, NOW())", 
-                                       {"i":items_str, "t":total, "c":st.session_state.user})
+                                       {"i":items_str, "t":total_bill, "c":st.session_state.user})
                             
-                            # STOKDAN ÇIXILMA
+                            # 2. Stokdan Sil (Resept * Say)
                             log = []
                             with conn.session as s:
                                 for item in st.session_state.cart:
@@ -197,23 +223,25 @@ else:
                                     if recipes:
                                         for r in recipes:
                                             ing_name = r[0]
-                                            qty_needed = r[1]
+                                            qty_needed = float(r[1]) * int(item['qty']) # Smart Logic: 1 Latte uses 200ml milk, 3 Lattes use 600ml
+                                            
                                             s.execute(text("UPDATE ingredients SET stock_qty = stock_qty - :q WHERE name = :n"), {"q":qty_needed, "n":ing_name})
                                             log.append(f"{ing_name}: -{qty_needed}")
                                 s.commit()
                             
-                            if log: st.toast(f"Stok: {', '.join(set(log))}")
+                            if log: st.toast(f"Stokdan silindi: {len(log)} komponent")
                             st.session_state.cart = []
                             st.success("Satıldı!")
                             time.sleep(1); st.rerun()
                         except Exception as e: st.error(f"Xəta: {e}")
-                else: st.warning("Səbət boşdur")
+                else:
+                    st.warning("Səbət boşdur")
 
+            # --- SAĞ: MƏHSULLAR ---
             with c2:
-                # KATEQORIYA
                 cats = run_query("SELECT DISTINCT category FROM menu WHERE is_active=TRUE")
                 if not cats.empty:
-                    cat_list = ["Hamısı"] + cats['category'].tolist()
+                    cat_list = ["Hamısı"] + sorted(cats['category'].tolist())
                     sel_cat = st.radio("Kataloq", cat_list, horizontal=True)
                     
                     sql = "SELECT * FROM menu WHERE is_active=TRUE"
@@ -221,8 +249,6 @@ else:
                     if sel_cat != "Hamısı":
                         sql += " AND category=:c"
                         params["c"] = sel_cat
-                    
-                    # Qiymətə görə sırala (Ucuzdan bahaya)
                     sql += " ORDER BY price ASC"
                     
                     prods = run_query(sql, params)
@@ -230,12 +256,28 @@ else:
                     for idx, row in prods.iterrows():
                         with cols[idx % 4]:
                             if st.button(f"{row['item_name']}\n{row['price']}₼", key=f"p{row['id']}", use_container_width=True):
-                                st.session_state.cart.append(row.to_dict())
+                                # SMART ADD: Check if exists
+                                existing = next((x for x in st.session_state.cart if x['item_name'] == row['item_name']), None)
+                                if existing:
+                                    existing['qty'] += 1
+                                else:
+                                    st.session_state.cart.append({'item_name': row['item_name'], 'price': float(row['price']), 'qty': 1})
                                 st.rerun()
 
-        # --- TAB 2: ANBAR (STOK) ---
+        # --- TAB 2: ANBAR ---
         with tabs[1]:
             st.subheader("📦 Anbarın İdarə Edilməsi")
+            
+            # YENİ AĞILLI KATEQORİYALAR
+            SMART_CATS = [
+                "Bar (Qəhvə/Çay/Kakao)", 
+                "Süd Məhsulları & Qaymaq", 
+                "Siroplar & Souslar", 
+                "Qablaşdırma (Stəkan/Qapaq/Salfet)", 
+                "Hazır Məhsul (İçki/Desert)",
+                "Meyvə & Tərəvəz",
+                "Təsərrüfat & Təmizlik"
+            ]
             
             c_add, c_list = st.columns([1, 2])
             
@@ -246,22 +288,21 @@ else:
                 if mode == "Əlavə Et / Artır":
                     with st.form("add_ing_form"):
                         name = st.text_input("Xammal Adı (Unikal)")
-                        cat = st.selectbox("Kateqoriya", ["Bar", "Süd", "Siroplar", "Qablaşdırma", "Hazır Mal"])
+                        cat = st.selectbox("Kateqoriya", SMART_CATS)
                         qty = st.number_input("Miqdar", min_value=0.0)
                         unit = st.selectbox("Vahid", ["gr", "ml", "ədəd", "kq", "litr"])
-                        limit = st.number_input("Limit (Xəbərdarlıq)", value=10.0)
+                        limit = st.number_input("Kritik Limit", value=10.0)
                         if st.form_submit_button("Yadda Saxla"):
                             try:
                                 run_action("""
                                     INSERT INTO ingredients (name, stock_qty, unit, category, min_limit) 
                                     VALUES (:n, :q, :u, :c, :l) 
-                                    ON CONFLICT (name) DO UPDATE SET stock_qty = ingredients.stock_qty + :q
+                                    ON CONFLICT (name) DO UPDATE SET stock_qty = ingredients.stock_qty + :q, category = :c
                                     """, {"n":name, "q":qty, "u":unit, "c":cat, "l":limit})
                                 st.success(f"{name} uğurla yeniləndi!")
                                 st.rerun()
                             except Exception as e: st.error(str(e))
                 else:
-                    # SİLMƏK REJİMİ
                     del_ing_list = run_query("SELECT name FROM ingredients")
                     if not del_ing_list.empty:
                         with st.form("del_ing_form"):
@@ -273,7 +314,7 @@ else:
 
             with c_list:
                 st.markdown("#### 📊 Anbar Vəziyyəti")
-                ing_df = run_query("SELECT * FROM ingredients ORDER BY name")
+                ing_df = run_query("SELECT * FROM ingredients ORDER BY category, name")
                 if not ing_df.empty:
                     for _, row in ing_df.iterrows():
                         color_cls = "stock-low" if row['stock_qty'] <= row['min_limit'] else "stock-ok"
@@ -281,7 +322,7 @@ else:
                         st.markdown(f"""
                         <div class="{color_cls}">
                             <div style="display:flex; justify-content:space-between;">
-                                <span><b>{row['name']}</b> ({row['category']})</span>
+                                <span><b>{row['name']}</b> <i style="color:#666">({row['category']})</i></span>
                                 <span>{row['stock_qty']} {row['unit']}</span>
                             </div>
                             <div style="font-size:12px; color:gray;">Min: {row['min_limit']} | {msg}</div>
@@ -290,7 +331,7 @@ else:
                 else:
                     st.info("Anbar boşdur.")
 
-        # --- TAB 3: RESEPT QURUCUSU (TƏKMİL) ---
+        # --- TAB 3: RESEPT ---
         with tabs[2]:
             st.subheader("📜 Məhsul Reseptləri")
             c_sel, c_build = st.columns([1, 2])
@@ -298,49 +339,44 @@ else:
             with c_sel:
                 menu_items = run_query("SELECT item_name FROM menu WHERE is_active=TRUE")
                 if not menu_items.empty:
-                    sel_prod = st.selectbox("1. Resepti qurulacaq məhsulu seç:", menu_items['item_name'].unique())
+                    sel_prod = st.selectbox("1. Məhsul Seç:", sorted(menu_items['item_name'].unique()))
                     st.session_state.selected_recipe_product = sel_prod
-                else:
-                    st.warning("Menyu boşdur.")
-                    st.stop()
+                else: st.warning("Menyu boşdur.")
 
             with c_build:
                 prod_name = st.session_state.selected_recipe_product
-                st.markdown(f"#### 🛠️ {prod_name} tərkibi:")
-                
-                curr_recipe = run_query("SELECT id, ingredient_name, quantity_required FROM recipes WHERE menu_item_name=:m", {"m":prod_name})
-                if not curr_recipe.empty:
-                    st.table(curr_recipe)
-                    del_rec_id = st.selectbox("Reseptdən silmək üçün ID seç:", curr_recipe['id'].tolist(), key="del_rec_sel")
-                    if st.button("Seçilən sətri sil"):
-                        run_action("DELETE FROM recipes WHERE id=:id", {"id":del_rec_id})
-                        st.rerun()
-                else:
-                    st.info("Bu məhsul üçün hələ resept yoxdur.")
-
-                st.divider()
-                st.markdown("➕ Tərkib əlavə et:")
-                all_ings = run_query("SELECT name, unit FROM ingredients ORDER BY name")
-                if not all_ings.empty:
-                    with st.form("add_rec_item"):
-                        c_i1, c_i2 = st.columns(2)
-                        sel_ing_row = c_i1.selectbox("Xammal", all_ings['name'].unique())
-                        u = all_ings[all_ings['name']==sel_ing_row].iloc[0]['unit']
-                        qty_req = c_i2.number_input(f"Miqdar ({u})", min_value=0.1, step=0.1)
-                        if st.form_submit_button("Əlavə Et"):
-                            run_action("INSERT INTO recipes (menu_item_name, ingredient_name, quantity_required) VALUES (:m, :i, :q)",
-                                       {"m":prod_name, "i":sel_ing_row, "q":qty_req})
-                            st.success("Əlavə edildi!")
+                if prod_name:
+                    st.markdown(f"#### 🛠️ {prod_name} tərkibi:")
+                    
+                    curr_recipe = run_query("SELECT id, ingredient_name, quantity_required FROM recipes WHERE menu_item_name=:m", {"m":prod_name})
+                    if not curr_recipe.empty:
+                        st.table(curr_recipe)
+                        del_rec_id = st.selectbox("Silmək üçün ID:", curr_recipe['id'].tolist(), key="del_rec_sel")
+                        if st.button("Sətri Sil"):
+                            run_action("DELETE FROM recipes WHERE id=:id", {"id":del_rec_id})
                             st.rerun()
+                    else: st.info("Resept yoxdur.")
 
-        # --- TAB 4: MENYU (DÜZƏLDİLMİŞ & EXCEL) ---
+                    st.divider()
+                    all_ings = run_query("SELECT name, unit FROM ingredients ORDER BY name")
+                    if not all_ings.empty:
+                        with st.form("add_rec_item"):
+                            c_i1, c_i2 = st.columns(2)
+                            sel_ing_row = c_i1.selectbox("Xammal", all_ings['name'].unique())
+                            u = all_ings[all_ings['name']==sel_ing_row].iloc[0]['unit']
+                            qty_req = c_i2.number_input(f"Miqdar ({u})", min_value=0.1, step=0.1)
+                            if st.form_submit_button("Əlavə Et"):
+                                run_action("INSERT INTO recipes (menu_item_name, ingredient_name, quantity_required) VALUES (:m, :i, :q)",
+                                           {"m":prod_name, "i":sel_ing_row, "q":qty_req})
+                                st.success("Əlavə edildi!")
+                                st.rerun()
+
+        # --- TAB 4: MENYU ---
         with tabs[3]:
-            st.subheader("📋 Menyu İdarəetməsi")
-            
-            # 1. FIXED MENU LOAD BUTTON
+            st.subheader("📋 Menyu")
             with st.expander("🔄 Standart Menyunu Yüklə (Reset)", expanded=True):
-                st.warning("DİQQƏT: Bu düyməyə basdıqda köhnə menyu silinəcək və Excel-dən təmizlənmiş yeni qiymətlər yazılacaq!")
-                if st.button("Düzəldilmiş Menyunu Bazaya Yaz"):
+                st.warning("DİQQƏT: Köhnə menyu silinəcək!")
+                if st.button("Yüklə"):
                     run_action("DELETE FROM menu")
                     count = 0
                     for item in FIXED_MENU_DATA:
@@ -349,41 +385,27 @@ else:
                             VALUES (:n, :p, :c, TRUE, :ic)
                             """, {"n":item['name'], "p":item['price'], "c":item['cat'], "ic":item['is_coffee']})
                         count += 1
-                    st.success(f"✅ {count} məhsul uğurla yükləndi (Qiymətlər düzəldi!)")
+                    st.success(f"{count} məhsul yükləndi!")
                     time.sleep(1); st.rerun()
-
-            st.divider()
             
-            # Excel Upload (Optional)
-            with st.expander("📥 Başqa Excel Faylı Yüklə (Bulk Import)"):
-                up_file = st.file_uploader("Excel faylı (.xlsx)", type=['xlsx'])
-                if up_file and st.button("Faylı Oxu və Bazaya Yaz"):
-                    try:
-                        df = pd.read_excel(up_file)
-                        if not {'item_name', 'price', 'category'}.issubset(df.columns):
-                            st.error("Sütunlar düzgün deyil! (item_name, price, category) olmalıdır.")
-                        else:
-                            count = 0
-                            for _, row in df.iterrows():
-                                if pd.isna(row['item_name']): continue
-                                run_action("INSERT INTO menu (item_name, price, category, is_active) VALUES (:n, :p, :c, TRUE)", 
-                                           {"n":str(row['item_name']), "p":float(row['price']), "c":str(row['category'])})
-                                count += 1
-                            st.success(f"✅ {count} məhsul əlavə edildi!")
-                            time.sleep(1); st.rerun()
-                    except Exception as e: st.error(f"Xəta: {e}")
+            with st.expander("➕ Tək Məhsul Əlavə Et"):
+                with st.form("single_add"):
+                    n = st.text_input("Ad")
+                    p = st.number_input("Qiymət", min_value=0.0)
+                    c = st.text_input("Kateqoriya")
+                    if st.form_submit_button("Əlavə Et"):
+                        run_action("INSERT INTO menu (item_name, price, category, is_active) VALUES (:n, :p, :c, TRUE)", {"n":n, "p":p, "c":c})
+                        st.rerun()
 
-            # Mövcud Menyu
-            st.markdown("#### Mövcud Menyu")
-            menu_df = run_query("SELECT * FROM menu ORDER BY category, item_name")
-            st.dataframe(menu_df, use_container_width=True)
+            m = run_query("SELECT * FROM menu ORDER BY category, item_name")
+            st.dataframe(m, use_container_width=True)
 
         # --- TAB 5: AYARLAR ---
         with tabs[4]:
-            if st.button("Sistemdən Çıxış"):
+            if st.button("Çıxış"):
                 run_action("DELETE FROM active_sessions WHERE token=:t", {"t":st.query_params.get("token")})
                 st.session_state.logged_in = False
                 st.rerun()
 
     elif role == 'staff':
-        st.warning("Staff Rejimi (POS Only)")
+        st.warning("Staff Rejimi")
