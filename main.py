@@ -18,10 +18,10 @@ import base64
 import json
 
 # ==========================================
-# === IRONWAVES POS - V3.4 STABLE (Variant A) ===
+# === IRONWAVES POS - V3.4.1 (UI RESTORE) ===
 # ==========================================
 
-VERSION = "v3.4 STABLE (Gift Logic)"
+VERSION = "v3.4.1 (UI Restore)"
 
 # --- INFRA ---
 RESEND_API_KEY = os.environ.get("RESEND_API_KEY")
@@ -32,7 +32,7 @@ DEFAULT_SENDER_EMAIL = "info@ironwaves.store"
 # --- CONFIG ---
 st.set_page_config(page_title=f"Ironwaves POS {VERSION}", page_icon="☕", layout="wide", initial_sidebar_state="collapsed")
 
-# --- CSS (Radical Print Fix & UI) ---
+# --- CSS (UI RESTORED + PRINT FIX) ---
 st.markdown("""
     <style>
     @import url('https://fonts.googleapis.com/css2?family=Oswald:wght@400;500;700;900&display=swap');
@@ -42,6 +42,25 @@ st.markdown("""
     header, #MainMenu, footer, [data-testid="stSidebar"] { display: none !important; }
     .block-container { padding-top: 1rem !important; padding-bottom: 2rem !important; max-width: 100% !important; }
     
+    /* --- RESTORED NAVIGATION TABS --- */
+    button[data-baseweb="tab"] {
+        font-family: 'Oswald', sans-serif !important; 
+        font-size: 18px !important; 
+        font-weight: 700 !important;
+        background-color: white !important; 
+        border: 2px solid #FFCCBC !important; 
+        border-radius: 12px !important;
+        margin: 0 4px !important; 
+        color: #555 !important; 
+        flex-grow: 1;
+    }
+    button[data-baseweb="tab"][aria-selected="true"] {
+        background: linear-gradient(135deg, #FF6B35, #FF8C00) !important; 
+        border-color: #FF6B35 !important; 
+        color: white !important;
+        box-shadow: 0 4px 12px rgba(255, 107, 53, 0.4);
+    }
+
     /* BUTTONS */
     div.stButton > button { border-radius: 12px !important; height: 60px !important; font-weight: 700 !important; box-shadow: 0 4px 0 rgba(0,0,0,0.1) !important; transition: all 0.1s !important; }
     div.stButton > button:active { transform: translateY(3px) !important; box-shadow: none !important; }
@@ -59,6 +78,7 @@ st.markdown("""
     .paper-receipt { background-color: #fff; width: 100%; max-width: 350px; padding: 20px; margin: 0 auto; box-shadow: 0 0 15px rgba(0,0,0,0.1); font-family: 'Courier Prime', monospace; font-size: 13px; color: #000; border: 1px solid #ddd; }
     .receipt-cut-line { border-bottom: 2px dashed #000; margin: 15px 0; }
     
+    /* RADICAL PRINT FIX */
     @media print {
         body * { visibility: hidden; }
         .paper-receipt, .paper-receipt * { visibility: visible; }
@@ -162,18 +182,9 @@ def format_qty(val):
     if val % 1 == 0: return int(val)
     return val
 
-# --- SMART CALCULATION ENGINE (V3.4 Variant A) ---
+# --- SMART CALCULATION ENGINE ---
 def calculate_smart_total(cart, customer=None):
-    """
-    Calculates total with logic:
-    1. Variant A: (Current Stars + Coffee in Cart) >= 10 -> Free Coffees
-    2. Then apply Thermos/Coupon discounts to remaining coffees
-    """
-    total = 0.0
-    discounted_total = 0.0
-    
-    # 1. Determine Discounts (Percent)
-    coffee_discount_rate = 0.0
+    total = 0.0; discounted_total = 0.0; coffee_discount_rate = 0.0
     current_stars = 0
     if customer:
         current_stars = customer.get('stars', 0)
@@ -188,49 +199,25 @@ def calculate_smart_total(cart, customer=None):
                         if rate > coffee_discount_rate: coffee_discount_rate = rate 
         except: pass
 
-    # 2. Logic: Free Coffee (Variant A)
-    # Count cart coffees
     cart_coffee_count = sum([item['qty'] for item in cart if item.get('is_coffee')])
-    
-    # Total pool of stars (Existing + New)
     total_star_pool = current_stars + cart_coffee_count
-    
-    # How many free coffees can be redeemed?
-    # Logic: 10 stars = 1 free coffee.
-    # But we can only discount items IN THE CART.
     potential_free = total_star_pool // 10
-    
-    # We can't give more free coffees than are currently in the cart
     free_coffees_to_apply = min(potential_free, cart_coffee_count)
     
-    # Remaining stars after redemption (Important for DB update)
-    # If we apply X free coffees, we 'consume' X*10 stars from the POOL.
-    # new_stars = total_star_pool - (free_coffees_to_apply * 10)
-    
-    # 3. Apply Discounts
-    # Flatten items to handle quantity
     flat_items = []
     for item in cart:
         for _ in range(item['qty']):
             flat_items.append({'price': item['price'], 'is_coffee': item.get('is_coffee', False)})
     
-    # Sort coffees? Usually, the cheapest is free, or just first. Let's do first found for simplicity.
     processed_free = 0
-    
     for item in flat_items:
-        line_price = item['price']
-        total += line_price
-        
+        line_price = item['price']; total += line_price
         if item['is_coffee']:
             if processed_free < free_coffees_to_apply:
-                # FREE!
-                discounted_total += 0
-                processed_free += 1
+                discounted_total += 0; processed_free += 1
             else:
-                # Percentage Discount
                 discounted_total += line_price * (1 - coffee_discount_rate)
         else:
-            # Full Price
             discounted_total += line_price
             
     return total, discounted_total, coffee_discount_rate, free_coffees_to_apply, total_star_pool
@@ -250,7 +237,7 @@ if "id" in qp:
                 em = st.text_input("Email"); dob = st.date_input("Doğum Tarixi", min_value=datetime.date(1950,1,1))
                 st.markdown("### 📜 İstifadəçi Razılaşması")
                 with st.expander("Qaydaları Oxumaq üçün Toxunun"):
-                    st.markdown("**İSTİFADƏÇİ RAZILAŞMASI...** (Tam mətn)")
+                    st.markdown("Endirimlər yalnız kofe məhsullarına şamil edilir.")
                 agree = st.checkbox("Şərtləri qəbul edirəm")
                 if st.form_submit_button("Tamamla"):
                     if agree:
@@ -357,7 +344,7 @@ def render_takeaway():
             c = st.session_state.current_customer_ta; st.success(f"👤 {c['card_id']} | ⭐ {c['stars']}")
             if st.button("Ləğv Et", key="ta_cl"): st.session_state.current_customer_ta=None; st.rerun()
         
-        # SMART CALCULATION (VARIANT A)
+        # SMART CALCULATION
         raw_total, final_total, disc_rate, free_count, total_pool = calculate_smart_total(st.session_state.cart_takeaway, st.session_state.current_customer_ta)
         
         if st.session_state.cart_takeaway:
@@ -391,17 +378,6 @@ def render_takeaway():
                         rs = s.execute(text("SELECT ingredient_name, quantity_required FROM recipes WHERE menu_item_name=:m"), {"m":it['item_name']}).fetchall()
                         for r in rs: s.execute(text("UPDATE ingredients SET stock_qty=stock_qty-:q WHERE name=:n"), {"q":float(r[1])*it['qty'], "n":r[0]})
                     if st.session_state.current_customer_ta:
-                        # NEW STAR CALCULATION: Total Pool % 10 (Remainder)
-                        # We calculate what was used.
-                        # Total Pool = Old Stars + New Coffees
-                        # We gave 'free_count' coffees -> consumed free_count * 10 stars.
-                        # But simpler: New Balance = Total Pool % 10.
-                        # BUT wait: Thermos/Coupon items still give stars? Usually yes.
-                        # If a coffee is free, it usually doesn't generate a star.
-                        # "Buy 9 get 1 free" -> 9 paid coffees generate 9 stars. The 10th is free.
-                        # Let's use the standard "Variant A" math:
-                        # New Balance = (Old Stars + Coffees In Cart) - (Free Coffees Redeemed * 10)
-                        # Wait, (Old + Cart) % 10 is safest if we treat every coffee as a star, then redeem.
                         new_stars_balance = total_pool - (free_count * 10)
                         s.execute(text("UPDATE customers SET stars=:s WHERE card_id=:id"), {"s":new_stars_balance, "id":cust_id})
                     s.commit()
@@ -493,15 +469,11 @@ def render_table_order():
                         rs = s.execute(text("SELECT ingredient_name, quantity_required FROM recipes WHERE menu_item_name=:m"), {"m":it['item_name']}).fetchall()
                         for r in rs: s.execute(text("UPDATE ingredients SET stock_qty=stock_qty-:q WHERE name=:n"), {"q":float(r[1])*it['qty'], "n":r[0]})
                     if st.session_state.current_customer_tb:
-                        # Variant A Star Logic
                         new_stars_balance = total_pool - (free_count * 10)
                         s.execute(text("UPDATE customers SET stars=:s WHERE card_id=:id"), {"s":new_stars_balance, "id":cust_id})
                     s.commit()
                 run_action("UPDATE tables SET is_occupied=FALSE, items=NULL, total=0 WHERE id=:id", {"id":tbl['id']})
-                st.session_state.last_sale = {
-                    "id": int(time.time()), "items": istr, "total": final_total, "subtotal": raw_total, "discount": raw_total - final_total,
-                    "date": get_baku_now().strftime("%Y-%m-%d %H:%M"), "cashier": st.session_state.user, "customer_email": cust_email
-                }
+                st.session_state.last_sale = {"id": int(time.time()), "items": istr, "total": final_total, "subtotal": raw_total, "discount": raw_total - final_total, "date": get_baku_now().strftime("%Y-%m-%d %H:%M"), "cashier": st.session_state.user, "customer_email": cust_email}
                 st.session_state.cart_table=[]; st.session_state.selected_table=None; st.rerun()
             except Exception as e: st.error(str(e))
     with c2: render_menu_grid(st.session_state.cart_table, "tb")
@@ -601,7 +573,7 @@ else:
         tabs = st.tabs(["🏃‍♂️ AL-APAR", "🍽️ MASALAR", "📦 Anbar", "📜 Resept", "Analitika", "CRM", "Menyu", "⚙️ Ayarlar", "Admin", "QR"])
         with tabs[0]: render_takeaway()
         with tabs[1]: render_tables_main()
-        with tabs[2]: # Anbar
+        with tabs[2]: # Anbar (DYNAMIC TABS)
             st.subheader("📦 Anbar")
             cats = run_query("SELECT DISTINCT category FROM ingredients ORDER BY category")['category'].tolist()
             if not cats: cats = ["Ümumi"]
@@ -830,7 +802,6 @@ else:
         with tabs[9]: # QR
             cnt = st.number_input("Say", value=1, min_value=1, key="qr_cnt"); k = st.selectbox("Növ", ["Standard", "Termos", "10%", "20%", "50%"])
             if st.button("Yarat", key="gen_qr"):
-                # ZIP Logic
                 zb = BytesIO()
                 with zipfile.ZipFile(zb, "w") as zf:
                     images = []
