@@ -17,10 +17,10 @@ import base64
 import json
 
 # ==========================================
-# === IRONWAVES POS - V2.5 HOTFIX ===
+# === IRONWAVES POS - V2.5 PRODUCTION READY ===
 # ==========================================
 
-VERSION = "v2.5 HOTFIX"
+VERSION = "v2.5 Production Ready"
 
 # --- INFRA ---
 RESEND_API_KEY = os.environ.get("RESEND_API_KEY")
@@ -31,7 +31,7 @@ DEFAULT_SENDER_EMAIL = "info@ironwaves.store"
 # --- CONFIG ---
 st.set_page_config(page_title=f"Ironwaves POS {VERSION}", page_icon="☕", layout="wide", initial_sidebar_state="collapsed")
 
-# --- CSS ---
+# --- CSS (BOLD & PROFESSIONAL) ---
 st.markdown("""
     <style>
     @import url('https://fonts.googleapis.com/css2?family=Oswald:wght@400;500;700;900&display=swap');
@@ -53,19 +53,33 @@ st.markdown("""
     }
 
     /* GENERAL BUTTONS */
-    div.stButton > button { border-radius: 12px !important; height: 50px !important; font-weight: 700 !important; box-shadow: 0 4px 0 rgba(0,0,0,0.1) !important; transition: all 0.1s !important; }
+    div.stButton > button { 
+        border-radius: 12px !important; 
+        height: 60px !important; 
+        font-weight: 700 !important; 
+        box-shadow: 0 4px 0 rgba(0,0,0,0.1) !important; 
+        transition: all 0.1s !important; 
+    }
     div.stButton > button:active { transform: translateY(3px) !important; box-shadow: none !important; }
     div.stButton > button[kind="primary"] { background: linear-gradient(135deg, #FF6B35, #FF8C00) !important; color: white !important; }
 
-    /* --- TABLE BUTTON STYLES (HOTFIX DESIGN) --- */
-    /* Empty Table (Green) */
+    /* MENU PRODUCT BUTTONS (CUSTOM STYLE) */
+    /* Bu stil render_menu_grid-dəki düymələrə aiddir */
+    .menu-btn {
+        height: 100px !important;
+        font-size: 20px !important;
+        font-weight: 900 !important; /* BOLD */
+        white-space: pre-wrap !important; /* Alt-alta yazmaq üçün */
+        border: 2px solid #eee !important;
+    }
+
+    /* TABLE BUTTONS */
     div.stButton > button[kind="secondary"] {
         background: linear-gradient(135deg, #43A047, #2E7D32) !important;
         color: white !important; border: 2px solid #1B5E20 !important;
         height: 120px !important; font-size: 24px !important;
         white-space: pre-wrap !important;
     }
-    /* Occupied Table (Red) */
     div.stButton > button[kind="primary"] {
         background: linear-gradient(135deg, #E53935, #C62828) !important;
         color: white !important; border: 2px solid #B71C1C !important;
@@ -75,13 +89,17 @@ st.markdown("""
     }
     @keyframes pulse-red { 0% {box-shadow: 0 0 0 0 rgba(229, 57, 53, 0.4);} 70% {box-shadow: 0 0 0 10px rgba(229, 57, 53, 0);} 100% {box-shadow: 0 0 0 0 rgba(229, 57, 53, 0);} }
 
-    /* RECEIPT PREVIEW */
+    /* STOCK CARDS */
+    .stock-card { background: white; border-radius: 12px; padding: 12px; margin-bottom: 8px; box-shadow: 0 2px 5px rgba(0,0,0,0.05); border: 1px solid #eee; display: flex; justify-content: space-between; align-items: center; }
+    .stock-card.low { border-left: 6px solid #E74C3C; background: #FFF5F5; }
+    .stock-card.ok { border-left: 6px solid #2ECC71; }
+    
+    /* RECEIPT */
     .paper-receipt {
         background-color: #fff; width: 100%; max-width: 350px; padding: 20px; margin: 0 auto;
         box-shadow: 0 0 15px rgba(0,0,0,0.1); font-family: 'Courier Prime', monospace; font-size: 13px; color: #000; border: 1px solid #ddd;
     }
     .receipt-cut-line { border-bottom: 2px dashed #000; margin: 15px 0; }
-    
     .footer { position: fixed; left: 0; bottom: 0; width: 100%; background: #eee; color: #777; text-align: center; padding: 2px; font-size: 10px; z-index: 999; }
     </style>
 """, unsafe_allow_html=True)
@@ -186,7 +204,7 @@ def check_session_token():
                 st.session_state.role = res.iloc[0]['role']
         except: pass
 
-# --- RECEIPT GENERATOR (MANUAL INFO) ---
+# --- RECEIPT ---
 def generate_receipt_html(sale_data):
     r_store = get_setting("receipt_store_name", "EMALATXANA")
     r_addr = get_setting("receipt_address", "Bakı ş., Mərkəz")
@@ -198,20 +216,16 @@ def generate_receipt_html(sale_data):
     
     items_html = "<table style='width:100%; border-collapse: collapse; font-size:13px;'>"
     if isinstance(sale_data['items'], str):
-        # Clean [Masa X] from items list if present
         clean_items_str = sale_data['items']
         if clean_items_str.startswith("["):
-             # Split header from items
              parts = clean_items_str.split("] ", 1)
              if len(parts) > 1: clean_items_str = parts[1]
-
         for item in clean_items_str.split(', '):
             if " x" in item: parts = item.rsplit(" x", 1); name = parts[0]; qty = parts[1]
             else: name = item; qty = "1"
             items_html += f"<tr><td style='text-align:left;'>{name}</td><td style='text-align:right;'>x{qty}</td></tr>"
     items_html += "</table>"
 
-    # Header Logic: Extract table name if present in sale data items
     header_extra = ""
     if sale_data['items'].startswith("["):
         header_extra = f"<div style='text-align:center; font-weight:bold; margin:5px 0;'>{sale_data['items'].split(']')[0][1:]}</div>"
@@ -273,6 +287,50 @@ def render_analytics(is_admin=False):
         with tabs[2]:
             st.markdown("### 🕵️‍♂️ Giriş/Çıxış"); logs = run_query("SELECT * FROM system_logs ORDER BY created_at DESC LIMIT 100")
             if not logs.empty: logs['created_at'] = pd.to_datetime(logs['created_at']) + pd.Timedelta(hours=4); st.dataframe(logs, use_container_width=True)
+
+# --- MENU RENDERER (SMART BUTTONS) ---
+def render_menu_grid(cart_ref, key_prefix):
+    cats = run_query("SELECT DISTINCT category FROM menu WHERE is_active=TRUE")
+    if not cats.empty:
+        cl = ["Hamısı"] + sorted(cats['category'].tolist())
+        sc = st.radio("Kataloq", cl, horizontal=True, label_visibility="collapsed", key=f"cat_{key_prefix}")
+        sql = "SELECT * FROM menu WHERE is_active=TRUE"; p = {}; 
+        if sc != "Hamısı": sql += " AND category=:c"; p["c"] = sc
+        sql += " ORDER BY price ASC"
+        prods = run_query(sql, p)
+        gr = {}
+        for _, r in prods.iterrows():
+            n = r['item_name']; pts = n.split()
+            if len(pts)>1 and pts[-1] in ['S','M','L','XL','Single','Double']:
+                base = " ".join(pts[:-1]); gr.setdefault(base, []).append(r)
+            else: gr[n] = [r]
+        
+        cols = st.columns(4); i=0
+        
+        @st.dialog("Ölçü Seçimi")
+        def show_v(bn, its):
+            st.write(f"### {bn}")
+            for it in its:
+                lbl = it['item_name'].replace(bn, "").strip()
+                # Popup içindəki düymələr
+                if st.button(f"{lbl}\n{it['price']} ₼", key=f"v_{it['id']}_{key_prefix}", use_container_width=True):
+                    cart_ref.append({'item_name':it['item_name'], 'price':float(it['price']), 'qty':1, 'is_coffee':it['is_coffee']}); st.rerun()
+
+        for bn, its in gr.items():
+            with cols[i%4]:
+                if len(its)>1:
+                    # Multi (Variant) - Orange-ish
+                    # Label: Name + (Seçim)
+                    label = f"{bn}\n(Seçim)"
+                    if st.button(label, key=f"g_{bn}_{key_prefix}", use_container_width=True): show_v(bn, its)
+                else:
+                    # Single - White/Green Border
+                    it = its[0]
+                    # Label: Name + Price
+                    label = f"{it['item_name']}\n{it['price']} ₼"
+                    if st.button(label, key=f"s_{it['id']}_{key_prefix}", use_container_width=True):
+                        cart_ref.append({'item_name':it['item_name'], 'price':float(it['price']), 'qty':1, 'is_coffee':it['is_coffee']}); st.rerun()
+            i+=1
 
 def render_takeaway():
     c1, c2 = st.columns([1.5, 3])
@@ -349,11 +407,9 @@ def render_table_grid():
     cols = st.columns(3)
     for idx, row in tables.iterrows():
         with cols[idx % 3]:
-            # HOTFIX: Green/Red Big Buttons
             is_occ = row['is_occupied']
             label = f"{row['label']}\n\n{row['total']} ₼" if is_occ else f"{row['label']}\n\n(BOŞ)"
-            kind = "primary" if is_occ else "secondary" # Red for Primary (Occupied), Green for Secondary (Empty) via CSS
-            
+            kind = "primary" if is_occ else "secondary"
             if st.button(label, key=f"tbl_btn_{row['id']}", type=kind, use_container_width=True):
                 st.session_state.selected_table = row.to_dict()
                 st.session_state.cart_table = json.loads(row['items']) if is_occ and row['items'] else []
@@ -405,7 +461,6 @@ def render_table_order():
         if col_p.button("✅ ÖDƏNİŞ ET", key="pay_tbl", type="primary", use_container_width=True):
             if not st.session_state.cart_table: st.error("Boşdur!"); st.stop()
             try:
-                # HOTFIX: Single Table Label at the start
                 raw_items = ", ".join([f"{x['item_name']} x{x['qty']}" for x in st.session_state.cart_table])
                 istr = f"[{tbl['label']}] " + raw_items
                 
@@ -426,45 +481,6 @@ def render_table_order():
             except Exception as e: st.error(str(e))
 
     with c2: render_menu_grid(st.session_state.cart_table, "tb")
-
-def render_menu_grid(cart_ref, key_prefix):
-    cats = run_query("SELECT DISTINCT category FROM menu WHERE is_active=TRUE")
-    if not cats.empty:
-        cl = ["Hamısı"] + sorted(cats['category'].tolist())
-        sc = st.radio("Kataloq", cl, horizontal=True, label_visibility="collapsed", key=f"cat_{key_prefix}")
-        sql = "SELECT * FROM menu WHERE is_active=TRUE"; p = {}; 
-        if sc != "Hamısı": sql += " AND category=:c"; p["c"] = sc
-        sql += " ORDER BY price ASC"
-        prods = run_query(sql, p)
-        gr = {}
-        for _, r in prods.iterrows():
-            n = r['item_name']; pts = n.split()
-            if len(pts)>1 and pts[-1] in ['S','M','L','XL','Single','Double']:
-                base = " ".join(pts[:-1]); gr.setdefault(base, []).append(r)
-            else: gr[n] = [r]
-        
-        cols = st.columns(4); i=0
-        @st.dialog("Seçim")
-        def show_v(bn, its):
-            st.write(f"### {bn}")
-            for it in its:
-                lbl = it['item_name'].replace(bn, "").strip()
-                c_b, c_p = st.columns([3,1])
-                if c_b.button(f"{lbl}", key=f"v_{it['id']}_{key_prefix}", use_container_width=True):
-                    cart_ref.append({'item_name':it['item_name'], 'price':float(it['price']), 'qty':1, 'is_coffee':it['is_coffee']}); st.rerun()
-                c_p.write(f"{it['price']}")
-
-        for bn, its in gr.items():
-            with cols[i%4]:
-                if len(its)>1:
-                    st.markdown(f"<div class='pos-card-header'>{bn}</div><div class='pos-card-body'>Seçim</div>", unsafe_allow_html=True)
-                    if st.button("SEÇ", key=f"g_{bn}_{key_prefix}", use_container_width=True): show_v(bn, its)
-                else:
-                    it = its[0]
-                    st.markdown(f"<div class='pos-card-header'>{it['item_name']}</div><div class='pos-card-body'><div class='pos-price'>{it['price']}</div></div>", unsafe_allow_html=True)
-                    if st.button("ƏLAVƏ", key=f"s_{it['id']}_{key_prefix}", use_container_width=True):
-                        cart_ref.append({'item_name':it['item_name'], 'price':float(it['price']), 'qty':1, 'is_coffee':it['is_coffee']}); st.rerun()
-            i+=1
 
 # --- INIT STATE ---
 if 'logged_in' not in st.session_state: st.session_state.logged_in = False
@@ -572,7 +588,6 @@ else:
                                 if rc3.button("Sil", key=f"rd_{r_row['id']}"):
                                     run_action("DELETE FROM recipes WHERE id=:id", {"id":r_row['id']}); st.rerun()
                         else: st.caption("Resept yoxdur")
-                        
                         st.divider()
                         with st.form(f"add_r_{idx}"):
                             ings = run_query("SELECT name, unit FROM ingredients ORDER BY name")
@@ -604,15 +619,12 @@ else:
                     for _, r in run_query("SELECT card_id FROM customers").iterrows(): run_action("INSERT INTO customer_coupons (card_id, coupon_type, expires_at) VALUES (:i, 'disc_50', NOW() + INTERVAL '7 days')", {"i":r['card_id']})
                     st.success("Paylandı!")
 
-            # CRM SELECTOR
             all_customers = run_query("SELECT card_id, email, stars, type FROM customers")
             all_customers.insert(0, "Seç", False)
-            
             with c_mail:
                 st.markdown("#### 📧 Email")
                 edited_df = st.data_editor(all_customers, hide_index=True, use_container_width=True)
                 selected_emails = edited_df[edited_df["Seç"] == True]['email'].tolist()
-                
                 with st.form("mail"):
                     sub = st.text_input("Mövzu"); msg = st.text_area("Mesaj"); 
                     if st.form_submit_button("Seçilənlərə Göndər"):
@@ -637,40 +649,23 @@ else:
             if not ml.empty:
                 dm = st.selectbox("Silinəcək Məhsul", ml['item_name'].unique(), key="del_menu_select")
                 if st.button("❌ Məhsulu Sil", key="btn_del_menu_item"): run_action("DELETE FROM menu WHERE item_name=:n", {"n":dm}); st.rerun()
-        with tabs[7]: # Ayarlar (HOTFIX: RECEIPT MANUAL & PASSWORD)
+        with tabs[7]: # Ayarlar
             st.subheader("⚙️ Ayarlar")
             c1, c2 = st.columns(2)
             with c1:
                 st.markdown("**🧾 Çek (Manual Info)**")
-                # RECEIPT MANUAL INPUTS
                 r_name = st.text_input("Mağaza Adı", value=get_setting("receipt_store_name", "EMALATXANA"))
                 r_addr = st.text_input("Ünvan", value=get_setting("receipt_address", "Bakı"))
                 r_phone = st.text_input("Telefon", value=get_setting("receipt_phone", "+994 55 000 00 00"))
                 r_foot = st.text_input("Footer", value=get_setting("receipt_footer", "Təşəkkürlər!"))
-                
                 lf = st.file_uploader("Logo"); 
                 if lf and st.button("Logo Saxla", key="sv_lg"): set_setting("receipt_logo_base64", image_to_base64(lf)); st.success("OK")
-                
                 if st.button("Məlumatları Saxla", key="sv_txt"): 
-                    set_setting("receipt_store_name", r_name)
-                    set_setting("receipt_address", r_addr)
-                    set_setting("receipt_phone", r_phone)
-                    set_setting("receipt_footer", r_foot)
+                    set_setting("receipt_store_name", r_name); set_setting("receipt_address", r_addr)
+                    set_setting("receipt_phone", r_phone); set_setting("receipt_footer", r_foot)
                     st.success("Yadda saxlanıldı!")
                 
-                # REAL PREVIEW
-                prev_html = f"""
-                <div class="paper-receipt">
-                    <div style="text-align:center; font-weight:bold; font-size:16px;">{r_name}</div>
-                    <div style="text-align:center; font-size:12px;">{r_addr}</div>
-                    <div style="text-align:center; font-size:12px;">Tel: {r_phone}</div>
-                    <hr style="border-top: 1px dashed black;">
-                    <div style="font-size:12px;">Latte... 5.00<br>Su... 1.00</div>
-                    <hr style="border-top: 1px dashed black;">
-                    <div style="text-align:right; font-weight:bold;">CƏM: 6.00 ₼</div>
-                    <div style="text-align:center; font-size:12px;">{r_foot}</div>
-                </div>
-                """
+                prev_html = f"""<div class="paper-receipt"><div style="text-align:center; font-weight:bold; font-size:16px;">{r_name}</div><div style="text-align:center; font-size:12px;">{r_addr}</div><div style="text-align:center; font-size:12px;">Tel: {r_phone}</div><hr style="border-top: 1px dashed black;"><div style="font-size:12px;">Latte... 5.00<br>Su... 1.00</div><hr style="border-top: 1px dashed black;"><div style="text-align:right; font-weight:bold;">CƏM: 6.00 ₼</div><div style="text-align:center; font-size:12px;">{r_foot}</div></div>"""
                 st.markdown(prev_html, unsafe_allow_html=True)
 
             with c2:
@@ -681,7 +676,6 @@ else:
                 if st.button("Şifrəni Yenilə"):
                     run_action("UPDATE users SET password=:p WHERE username=:u", {"p":hash_password(new_pass), "u":target_user})
                     st.success("Yeniləndi!")
-
                 st.divider()
                 st.markdown("**Yeni İşçi Yarat**")
                 with st.form("nu"):
@@ -712,7 +706,6 @@ else:
                                     for _, row in pd.read_excel(xls, "Menu").iterrows():
                                         run_action("INSERT INTO menu (item_name,price,category,is_active,is_coffee) VALUES (:n,:p,:c,TRUE,:ic)", 
                                                    {"n":row['item_name'],"p":row['price'],"c":row['category'],"ic":row.get('is_coffee',False)})
-                                # Basic restore for critical tables implemented
                                 st.success("Bərpa olundu!")
                             except Exception as e: st.error(f"Xəta: {e}")
                     else: st.error("Şifrə səhvdir")
