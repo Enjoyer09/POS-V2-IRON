@@ -17,10 +17,10 @@ import base64
 import json
 
 # ==========================================
-# === IRONWAVES POS - V2.8.1 STABLE ===
+# === IRONWAVES POS - V2.9 FINAL PRODUCTION ===
 # ==========================================
 
-VERSION = "v2.8.1 STABLE"
+VERSION = "v2.9 FINAL"
 
 # --- INFRA ---
 RESEND_API_KEY = os.environ.get("RESEND_API_KEY")
@@ -101,9 +101,10 @@ try:
     conn = st.connection("neon", type="sql", url=db_url, pool_pre_ping=True)
 except Exception as e: st.error(f"DB Error: {e}"); st.stop()
 
-# --- SCHEMA ---
+# --- SCHEMA MIGRATION & INIT ---
 def ensure_schema():
     with conn.session as s:
+        # Standard Tables
         s.execute(text("CREATE TABLE IF NOT EXISTS tables (id SERIAL PRIMARY KEY, label TEXT, is_occupied BOOLEAN DEFAULT FALSE, items TEXT, total DECIMAL(10,2) DEFAULT 0, opened_at TIMESTAMP);"))
         s.execute(text("CREATE TABLE IF NOT EXISTS menu (id SERIAL PRIMARY KEY, item_name TEXT, price DECIMAL(10,2), category TEXT, is_active BOOLEAN DEFAULT FALSE, is_coffee BOOLEAN DEFAULT FALSE);"))
         s.execute(text("CREATE TABLE IF NOT EXISTS sales (id SERIAL PRIMARY KEY, items TEXT, total DECIMAL(10,2), payment_method TEXT, cashier TEXT, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP);"))
@@ -117,7 +118,14 @@ def ensure_schema():
         s.execute(text("CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT);"))
         s.execute(text("CREATE TABLE IF NOT EXISTS system_logs (id SERIAL PRIMARY KEY, username TEXT, action TEXT, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP);"))
         s.execute(text("CREATE TABLE IF NOT EXISTS expenses (id SERIAL PRIMARY KEY, title TEXT, amount DECIMAL(10,2), category TEXT, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP);"))
-        
+        # New Table V2.9
+        s.execute(text("CREATE TABLE IF NOT EXISTS coupon_templates (id SERIAL PRIMARY KEY, name TEXT, percent INTEGER, days_valid INTEGER, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP);"))
+
+        # MIGRATION: Add customer_card_id to sales if missing
+        try:
+            s.execute(text("ALTER TABLE sales ADD COLUMN IF NOT EXISTS customer_card_id TEXT;"))
+        except: pass # Ignore if exists or not supported (pg version dependent) but 'IF NOT EXISTS' is standard pg 9.6+
+
         # Init Tables
         res = s.execute(text("SELECT count(*) FROM tables")).fetchone()
         if res[0] == 0:
@@ -225,9 +233,7 @@ if "id" in qp:
                     else: st.error("Qaydaları qəbul etməlisiniz.")
             st.stop()
 
-        # FIX: Replaced double quotes with single quotes in style attribute
         st.markdown(f"<div class='cust-card'><h4 style='margin:0; color:#888;'>BALANS</h4><h1 style='color:#2E7D32; font-size: 48px; margin:0;'>{user['stars']} / 10</h1><p style='color:#555;'>ID: {card_id}</p></div>", unsafe_allow_html=True)
-        
         html_grid = '<div class="coffee-grid">'
         for i in range(10):
             icon_url = "https://cdn-icons-png.flaticon.com/512/751/751621.png"
@@ -311,7 +317,7 @@ def render_analytics(is_admin=False):
     with tabs[0]:
         st.markdown("### 📊 Satış Hesabatı")
         f_mode = st.radio("Vaxt", ["Günlük", "Aylıq"], horizontal=True, key=f"am_{is_admin}")
-        sql = "SELECT * FROM sales"; p = {}
+        sql = "SELECT id, created_at, items, total, payment_method, cashier, customer_card_id FROM sales"; p = {}
         if not is_admin: sql += " WHERE cashier = :u"; p['u'] = st.session_state.user
         else: sql += " WHERE 1=1" 
         if f_mode == "Günlük": d = st.date_input("Gün", datetime.date.today(), key=f"d_{is_admin}"); sql += " AND DATE(created_at AT TIME ZONE 'Asia/Baku') = :d"; p['d'] = d
@@ -319,7 +325,10 @@ def render_analytics(is_admin=False):
         sql += " ORDER BY created_at DESC"; sales = run_query(sql, p)
         if not sales.empty:
             sales['created_at'] = pd.to_datetime(sales['created_at']) + pd.Timedelta(hours=4); t = sales['total'].sum()
-            st.metric("Dövriyyə", f"{t:.2f} ₼"); st.dataframe(sales[['id', 'created_at', 'items', 'total', 'payment_method', 'cashier']], hide_index=True, use_container_width=True)
+            st.metric("Dövriyyə", f"{t:.2f} ₼")
+            # Rename for display
+            sales_display = sales.rename(columns={"customer_card_id": "Müştəri Kartı", "items": "Məhsullar", "total": "Cəm", "payment_method": "Ödəniş", "cashier": "Kassir"})
+            st.dataframe(sales_display[['id', 'created_at', 'Məhsullar', 'Cəm', 'Ödəniş', 'Kassir', 'Müştəri Kartı']], hide_index=True, use_container_width=True)
         else: st.info("Satış yoxdur")
     if is_admin and len(tabs) > 1:
         with tabs[1]:
@@ -366,15 +375,16 @@ def render_takeaway():
             if not st.session_state.cart_takeaway: st.error("Boşdur!"); st.stop()
             try:
                 istr = ", ".join([f"{x['item_name']} x{x['qty']}" for x in st.session_state.cart_takeaway])
-                run_action("INSERT INTO sales (items, total, payment_method, cashier, created_at) VALUES (:i,:t,:p,:c,:time)", 
-                           {"i":istr,"t":tb,"p":("Cash" if pm=="Nəğd" else "Card"),"c":st.session_state.user, "time":get_baku_now()})
+                cust_id = st.session_state.current_customer_ta['card_id'] if st.session_state.current_customer_ta else None
+                run_action("INSERT INTO sales (items, total, payment_method, cashier, created_at, customer_card_id) VALUES (:i,:t,:p,:c,:time, :cid)", 
+                           {"i":istr,"t":tb,"p":("Cash" if pm=="Nəğd" else "Card"),"c":st.session_state.user, "time":get_baku_now(), "cid":cust_id})
                 with conn.session as s:
                     for it in st.session_state.cart_takeaway:
                         rs = s.execute(text("SELECT ingredient_name, quantity_required FROM recipes WHERE menu_item_name=:m"), {"m":it['item_name']}).fetchall()
                         for r in rs: s.execute(text("UPDATE ingredients SET stock_qty=stock_qty-:q WHERE name=:n"), {"q":float(r[1])*it['qty'], "n":r[0]})
                     if st.session_state.current_customer_ta:
-                        cid = st.session_state.current_customer_ta['card_id']; gain = sum([x['qty'] for x in st.session_state.cart_takeaway if x.get('is_coffee')])
-                        s.execute(text("UPDATE customers SET stars=stars+:s WHERE card_id=:id"), {"s":gain, "id":cid})
+                        gain = sum([x['qty'] for x in st.session_state.cart_takeaway if x.get('is_coffee')])
+                        s.execute(text("UPDATE customers SET stars=stars+:s WHERE card_id=:id"), {"s":gain, "id":cust_id})
                     s.commit()
                 st.session_state.last_sale = {"id": int(time.time()), "items": istr, "total": tb, "date": get_baku_now().strftime("%Y-%m-%d %H:%M"), "cashier": st.session_state.user}
                 st.session_state.cart_takeaway=[]; st.rerun()
@@ -451,15 +461,16 @@ def render_table_order():
             try:
                 raw_items = ", ".join([f"{x['item_name']} x{x['qty']}" for x in st.session_state.cart_table])
                 istr = f"[{tbl['label']}] " + raw_items
-                run_action("INSERT INTO sales (items, total, payment_method, cashier, created_at) VALUES (:i,:t,:p,:c,:time)", 
-                           {"i":istr,"t":tb,"p":("Cash" if pm=="Nəğd" else "Card"),"c":st.session_state.user, "time":get_baku_now()})
+                cust_id = st.session_state.current_customer_tb['card_id'] if st.session_state.current_customer_tb else None
+                run_action("INSERT INTO sales (items, total, payment_method, cashier, created_at, customer_card_id) VALUES (:i,:t,:p,:c,:time, :cid)", 
+                           {"i":istr,"t":tb,"p":("Cash" if pm=="Nəğd" else "Card"),"c":st.session_state.user, "time":get_baku_now(), "cid":cust_id})
                 with conn.session as s:
                     for it in st.session_state.cart_table:
                         rs = s.execute(text("SELECT ingredient_name, quantity_required FROM recipes WHERE menu_item_name=:m"), {"m":it['item_name']}).fetchall()
                         for r in rs: s.execute(text("UPDATE ingredients SET stock_qty=stock_qty-:q WHERE name=:n"), {"q":float(r[1])*it['qty'], "n":r[0]})
                     if st.session_state.current_customer_tb:
-                        cid = st.session_state.current_customer_tb['card_id']; gain = sum([x['qty'] for x in st.session_state.cart_table if x.get('is_coffee')])
-                        s.execute(text("UPDATE customers SET stars=stars+:s WHERE card_id=:id"), {"s":gain, "id":cid})
+                        gain = sum([x['qty'] for x in st.session_state.cart_table if x.get('is_coffee')])
+                        s.execute(text("UPDATE customers SET stars=stars+:s WHERE card_id=:id"), {"s":gain, "id":cust_id})
                     s.commit()
                 run_action("UPDATE tables SET is_occupied=FALSE, items=NULL, total=0 WHERE id=:id", {"id":tbl['id']})
                 st.session_state.last_sale = {"id": int(time.time()), "items": istr, "total": tb, "date": get_baku_now().strftime("%Y-%m-%d %H:%M"), "cashier": st.session_state.user}
@@ -562,7 +573,7 @@ else:
         tabs = st.tabs(["🏃‍♂️ AL-APAR", "🍽️ MASALAR", "📦 Anbar", "📜 Resept", "Analitika", "CRM", "Menyu", "⚙️ Ayarlar", "Admin", "QR"])
         with tabs[0]: render_takeaway()
         with tabs[1]: render_tables_main()
-        with tabs[2]: # Anbar (DYNAMIC TABS)
+        with tabs[2]: # Anbar
             st.subheader("📦 Anbar")
             cats = run_query("SELECT DISTINCT category FROM ingredients ORDER BY category")['category'].tolist()
             if not cats: cats = ["Ümumi"]
@@ -612,7 +623,7 @@ else:
                                 if st.form_submit_button("Yarat"):
                                     run_action("INSERT INTO ingredients (name,stock_qty,unit,category) VALUES (:n,:q,:u,:c)", {"n":n,"q":q,"u":u,"c":c}); st.rerun()
 
-        with tabs[3]: # Resept (BULK DELETE)
+        with tabs[3]: # Resept (FINAL)
             st.subheader("📜 Reseptlər")
             rc1, rc2 = st.columns([1, 2])
             with rc1: 
@@ -634,10 +645,27 @@ else:
                         st.markdown(f"### 🍹 {p_name}")
                         st.markdown(f"**Satış Qiyməti:** {p_price} ₼")
                         st.divider()
-                        recs = run_query("SELECT id, ingredient_name, quantity_required FROM recipes WHERE menu_item_name=:n", {"n":p_name})
+                        # JOIN to get UNIT
+                        recs = run_query("""
+                            SELECT r.id, r.ingredient_name, r.quantity_required, i.unit 
+                            FROM recipes r 
+                            JOIN ingredients i ON r.ingredient_name = i.name 
+                            WHERE r.menu_item_name=:n
+                        """, {"n":p_name})
                         if not recs.empty:
+                            recs['Miqdar'] = recs['quantity_required'].astype(str) + " " + recs['unit']
+                            # Bulk Delete Logic
                             recs.insert(0, "Seç", False)
-                            edited_recs = st.data_editor(recs, column_config={"Seç": st.column_config.CheckboxColumn(required=True)}, hide_index=True, use_container_width=True, key="rec_editor")
+                            # Hide ID, qty, unit (raw)
+                            edited_recs = st.data_editor(
+                                recs, 
+                                column_config={
+                                    "Seç": st.column_config.CheckboxColumn(required=True),
+                                    "id": None, "quantity_required": None, "unit": None,
+                                    "ingredient_name": "İnqrediyent"
+                                }, 
+                                hide_index=True, use_container_width=True, key="rec_editor"
+                            )
                             to_del = edited_recs[edited_recs['Seç']]['id'].tolist()
                             if to_del and st.button(f"Seçilənləri Sil ({len(to_del)})", type="primary"):
                                 for d_id in to_del: run_action("DELETE FROM recipes WHERE id=:id", {"id":d_id})
@@ -656,27 +684,33 @@ else:
                 else: st.info("👈 Soldan məhsul seçin")
 
         with tabs[4]: render_analytics(is_admin=True)
-        with tabs[5]: # CRM (CUSTOM COUPON)
+        with tabs[5]: # CRM (FINAL)
             st.subheader("👥 CRM"); c_cp, c_mail = st.columns(2)
             with c_cp:
-                st.markdown("#### 🎫 Kuponlar")
-                with st.expander("🛠️ Xüsusi Kupon Yarat"):
+                # 1. Templates Tab
+                crm_tabs = st.tabs(["Kupon Yarat", "Şablonlar"])
+                with crm_tabs[0]:
                     with st.form("custom_coupon"):
                         cc_name = st.text_input("Kupon Kodu (Məs: YAY2026)")
                         cc_perc = st.number_input("Endirim (%)", 1, 100, 10)
                         cc_days = st.number_input("Müddət (Gün)", 1, 365, 7)
-                        if st.form_submit_button("Hamıya Payla"):
-                            ctype = f"custom_{cc_perc}_{cc_name}"
-                            for _, r in run_query("SELECT card_id FROM customers").iterrows(): 
-                                run_action(f"INSERT INTO customer_coupons (card_id, coupon_type, expires_at) VALUES ('{r['card_id']}', '{ctype}', NOW() + INTERVAL '{cc_days} days')")
-                            st.success("Paylandı!")
-                c1, c2 = st.columns(2)
-                if c1.button("🎂 Ad Günü"): 
-                    for _, r in run_query("SELECT card_id FROM customers").iterrows(): run_action("INSERT INTO customer_coupons (card_id, coupon_type, expires_at) VALUES (:i, 'disc_100_coffee', NOW() + INTERVAL '1 day')", {"i":r['card_id']})
-                    st.success("OK")
-                if c2.button("🏷️ 20%"):
-                    for _, r in run_query("SELECT card_id FROM customers").iterrows(): run_action("INSERT INTO customer_coupons (card_id, coupon_type, expires_at) VALUES (:i, 'disc_20', NOW() + INTERVAL '7 days')", {"i":r['card_id']})
-                    st.success("OK")
+                        if st.form_submit_button("Şablonu Yadda Saxla"):
+                            run_action("INSERT INTO coupon_templates (name, percent, days_valid) VALUES (:n, :p, :d)", {"n":cc_name, "p":cc_perc, "d":cc_days})
+                            st.success("Yadda saxlandı!")
+                
+                with crm_tabs[1]:
+                    # List Templates
+                    templates = run_query("SELECT * FROM coupon_templates ORDER BY created_at DESC")
+                    if not templates.empty:
+                        for _, t in templates.iterrows():
+                            c_t1, c_t2 = st.columns([3, 1])
+                            c_t1.write(f"🏷️ **{t['name']}** - {t['percent']}% ({t['days_valid']} gün)")
+                            if c_t2.button("Payla", key=f"dist_{t['id']}"):
+                                ctype = f"custom_{t['percent']}_{t['name']}"
+                                for _, r in run_query("SELECT card_id FROM customers").iterrows(): 
+                                    run_action(f"INSERT INTO customer_coupons (card_id, coupon_type, expires_at) VALUES ('{r['card_id']}', '{ctype}', NOW() + INTERVAL '{t['days_valid']} days')")
+                                st.success("Göndərildi!")
+                    else: st.info("Şablon yoxdur")
 
             with c_mail:
                 st.markdown("#### 📧 Email")
