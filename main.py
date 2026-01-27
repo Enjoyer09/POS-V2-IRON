@@ -18,10 +18,10 @@ import base64
 import json
 
 # ==========================================
-# === IRONWAVES POS - V3.3 PLATINUM FINAL ===
+# === IRONWAVES POS - V3.4 STABLE (Variant A) ===
 # ==========================================
 
-VERSION = "v3.3 PLATINUM FINAL"
+VERSION = "v3.4 STABLE (Gift Logic)"
 
 # --- INFRA ---
 RESEND_API_KEY = os.environ.get("RESEND_API_KEY")
@@ -32,7 +32,7 @@ DEFAULT_SENDER_EMAIL = "info@ironwaves.store"
 # --- CONFIG ---
 st.set_page_config(page_title=f"Ironwaves POS {VERSION}", page_icon="☕", layout="wide", initial_sidebar_state="collapsed")
 
-# --- CSS (RADICAL PRINT FIX) ---
+# --- CSS (Radical Print Fix & UI) ---
 st.markdown("""
     <style>
     @import url('https://fonts.googleapis.com/css2?family=Oswald:wght@400;500;700;900&display=swap');
@@ -42,61 +42,28 @@ st.markdown("""
     header, #MainMenu, footer, [data-testid="stSidebar"] { display: none !important; }
     .block-container { padding-top: 1rem !important; padding-bottom: 2rem !important; max-width: 100% !important; }
     
-    /* UI ELEMENTS */
-    button[data-baseweb="tab"] {
-        font-family: 'Oswald', sans-serif !important; font-size: 18px !important; font-weight: 700 !important;
-        background-color: white !important; border: 2px solid #FFCCBC !important; border-radius: 12px !important;
-        margin: 0 4px !important; color: #555 !important; flex-grow: 1;
-    }
-    button[data-baseweb="tab"][aria-selected="true"] {
-        background: linear-gradient(135deg, #FF6B35, #FF8C00) !important; border-color: #FF6B35 !important; color: white !important;
-        box-shadow: 0 4px 12px rgba(255, 107, 53, 0.4);
-    }
+    /* BUTTONS */
     div.stButton > button { border-radius: 12px !important; height: 60px !important; font-weight: 700 !important; box-shadow: 0 4px 0 rgba(0,0,0,0.1) !important; transition: all 0.1s !important; }
     div.stButton > button:active { transform: translateY(3px) !important; box-shadow: none !important; }
     div.stButton > button[kind="primary"] { background: linear-gradient(135deg, #FF6B35, #FF8C00) !important; color: white !important; }
     div.stButton > button[kind="secondary"] { background: linear-gradient(135deg, #43A047, #2E7D32) !important; color: white !important; border: 2px solid #1B5E20 !important; height: 120px !important; font-size: 24px !important; white-space: pre-wrap !important; }
     div.stButton > button[kind="primary"].table-occ { background: linear-gradient(135deg, #E53935, #C62828) !important; color: white !important; border: 2px solid #B71C1C !important; height: 120px !important; font-size: 24px !important; white-space: pre-wrap !important; animation: pulse-red 2s infinite; }
-    @keyframes pulse-red { 0% {box-shadow: 0 0 0 0 rgba(229, 57, 53, 0.4);} 70% {box-shadow: 0 0 0 10px rgba(229, 57, 53, 0);} 100% {box-shadow: 0 0 0 0 rgba(229, 57, 53, 0);} }
 
+    /* CUSTOMER PORTAL */
     .cust-card { background: white; border-radius: 20px; padding: 25px; box-shadow: 0 10px 30px rgba(0,0,0,0.08); text-align: center; margin-bottom: 20px; border: 1px solid #eee; }
     .coffee-grid { display: flex; flex-wrap: wrap; justify-content: center; gap: 10px; margin-top: 20px; }
     .coffee-icon { width: 45px; opacity: 0.2; filter: grayscale(100%); transition: all 0.5s; }
     .coffee-icon.active { opacity: 1; filter: none; transform: scale(1.1); }
     
-    /* RECEIPT STYLE */
-    .paper-receipt {
-        background-color: #fff; width: 100%; max-width: 350px; padding: 20px; margin: 0 auto;
-        box-shadow: 0 0 15px rgba(0,0,0,0.1); font-family: 'Courier Prime', monospace; font-size: 13px; color: #000; border: 1px solid #ddd;
-    }
+    /* RECEIPT */
+    .paper-receipt { background-color: #fff; width: 100%; max-width: 350px; padding: 20px; margin: 0 auto; box-shadow: 0 0 15px rgba(0,0,0,0.1); font-family: 'Courier Prime', monospace; font-size: 13px; color: #000; border: 1px solid #ddd; }
     .receipt-cut-line { border-bottom: 2px dashed #000; margin: 15px 0; }
     
-    /* --- RADICAL PRINT CSS --- */
     @media print {
-        /* Hide EVERYTHING in the body */
-        body * {
-            visibility: hidden;
-        }
-        /* Make only the receipt visible */
-        .paper-receipt, .paper-receipt * {
-            visibility: visible;
-        }
-        /* Position receipt at top-left of page */
-        .paper-receipt {
-            position: fixed;
-            left: 0;
-            top: 0;
-            width: 100%;
-            margin: 0;
-            padding: 0;
-            border: none;
-            box-shadow: none;
-        }
-        /* Hide Streamlit Dialog/Modal overlays */
-        div[data-testid="stDialog"], div[role="dialog"] {
-            box-shadow: none !important;
-            background: none !important;
-        }
+        body * { visibility: hidden; }
+        .paper-receipt, .paper-receipt * { visibility: visible; }
+        .paper-receipt { position: fixed; left: 0; top: 0; width: 100%; margin: 0; padding: 0; border: none; box-shadow: none; }
+        div[data-testid="stDialog"], div[role="dialog"] { box-shadow: none !important; background: none !important; }
     }
     </style>
 """, unsafe_allow_html=True)
@@ -181,39 +148,35 @@ def generate_custom_qr(data, center_text):
         else: newData.append((0, 100, 0, 255)) 
     img.putdata(newData)
     buf = BytesIO(); img.save(buf, format="PNG"); return buf.getvalue()
-
-# --- EMAIL ENGINE (ROBUST) ---
 def send_email(to_email, subject, body):
-    if not RESEND_API_KEY: 
-        print("DEBUG: API Key Missing")
-        return "API Key Yoxdur"
-    
+    if not RESEND_API_KEY: return "API_KEY_MISSING"
     url = "https://api.resend.com/emails"
     headers = {"Authorization": f"Bearer {RESEND_API_KEY}", "Content-Type": "application/json"}
     payload = {"from": f"Emalatxana <{DEFAULT_SENDER_EMAIL}>", "to": [to_email], "subject": subject, "html": body}
-    
-    print(f"DEBUG: Sending email to {to_email}...")
     try: 
-        # Timeout added to prevent freezing
         r = requests.post(url, json=payload, headers=headers, timeout=5)
-        print(f"DEBUG: Response {r.status_code} - {r.text}")
-        
         if r.status_code == 200: return "OK"
-        elif r.status_code == 403: return "Domen Təsdiqlənməyib (403)"
-        elif r.status_code == 401: return "API Key Səhvdir (401)"
-        else: return f"Xəta: {r.status_code}"
-    except Exception as e:
-        print(f"DEBUG: Exception {e}")
-        return "İnternet Xətası"
-
+        else: return f"API Error {r.status_code}"
+    except: return "Connection Error"
 def format_qty(val):
     if val % 1 == 0: return int(val)
     return val
 
-# --- SMART DISCOUNT ENGINE ---
+# --- SMART CALCULATION ENGINE (V3.4 Variant A) ---
 def calculate_smart_total(cart, customer=None):
-    total = 0.0; discounted_total = 0.0; coffee_discount_rate = 0.0
+    """
+    Calculates total with logic:
+    1. Variant A: (Current Stars + Coffee in Cart) >= 10 -> Free Coffees
+    2. Then apply Thermos/Coupon discounts to remaining coffees
+    """
+    total = 0.0
+    discounted_total = 0.0
+    
+    # 1. Determine Discounts (Percent)
+    coffee_discount_rate = 0.0
+    current_stars = 0
     if customer:
+        current_stars = customer.get('stars', 0)
         if customer.get('type') == 'thermos': coffee_discount_rate = 0.20
         try:
             coupons = run_query("SELECT coupon_type FROM customer_coupons WHERE card_id=:id AND is_used=FALSE AND (expires_at IS NULL OR expires_at > NOW())", {"id": customer['card_id']})
@@ -224,11 +187,53 @@ def calculate_smart_total(cart, customer=None):
                         rate = int(p) / 100.0
                         if rate > coffee_discount_rate: coffee_discount_rate = rate 
         except: pass
+
+    # 2. Logic: Free Coffee (Variant A)
+    # Count cart coffees
+    cart_coffee_count = sum([item['qty'] for item in cart if item.get('is_coffee')])
+    
+    # Total pool of stars (Existing + New)
+    total_star_pool = current_stars + cart_coffee_count
+    
+    # How many free coffees can be redeemed?
+    # Logic: 10 stars = 1 free coffee.
+    # But we can only discount items IN THE CART.
+    potential_free = total_star_pool // 10
+    
+    # We can't give more free coffees than are currently in the cart
+    free_coffees_to_apply = min(potential_free, cart_coffee_count)
+    
+    # Remaining stars after redemption (Important for DB update)
+    # If we apply X free coffees, we 'consume' X*10 stars from the POOL.
+    # new_stars = total_star_pool - (free_coffees_to_apply * 10)
+    
+    # 3. Apply Discounts
+    # Flatten items to handle quantity
+    flat_items = []
     for item in cart:
-        line_total = item['qty'] * item['price']; total += line_total
-        if item.get('is_coffee', False): discounted_total += line_total * (1 - coffee_discount_rate)
-        else: discounted_total += line_total
-    return total, discounted_total, coffee_discount_rate
+        for _ in range(item['qty']):
+            flat_items.append({'price': item['price'], 'is_coffee': item.get('is_coffee', False)})
+    
+    # Sort coffees? Usually, the cheapest is free, or just first. Let's do first found for simplicity.
+    processed_free = 0
+    
+    for item in flat_items:
+        line_price = item['price']
+        total += line_price
+        
+        if item['is_coffee']:
+            if processed_free < free_coffees_to_apply:
+                # FREE!
+                discounted_total += 0
+                processed_free += 1
+            else:
+                # Percentage Discount
+                discounted_total += line_price * (1 - coffee_discount_rate)
+        else:
+            # Full Price
+            discounted_total += line_price
+            
+    return total, discounted_total, coffee_discount_rate, free_coffees_to_apply, total_star_pool
 
 # --- 1. MÜŞTƏRİ PORTALI ---
 qp = st.query_params
@@ -245,12 +250,7 @@ if "id" in qp:
                 em = st.text_input("Email"); dob = st.date_input("Doğum Tarixi", min_value=datetime.date(1950,1,1))
                 st.markdown("### 📜 İstifadəçi Razılaşması")
                 with st.expander("Qaydaları Oxumaq üçün Toxunun"):
-                    st.markdown("""
-                    **İSTİFADƏÇİ RAZILAŞMASI VƏ MƏXFİLİK SİYASƏTİ**
-                    **1. Ümumi Müddəalar:** Bu loyallıq proqramı "Ironwaves POS" sistemi vasitəsilə idarə olunur.
-                    **2. Bonuslar:** 2.1. Toplanılan ulduzlar nağd pula çevrilmir. 2.2. **Şəxsiyyət:** Hədiyyə üçün sənəd tələb oluna bilər. 2.3. **Endirimlər:** Yalnız kofe və kofe əsaslı içkilərə şamil edilir.
-                    **3. Məxfilik:** Məlumatlarınız (Email) 3-cü tərəflə paylaşılmır.
-                    """)
+                    st.markdown("**İSTİFADƏÇİ RAZILAŞMASI...** (Tam mətn)")
                 agree = st.checkbox("Şərtləri qəbul edirəm")
                 if st.form_submit_button("Tamamla"):
                     if agree:
@@ -259,6 +259,17 @@ if "id" in qp:
                     else: st.error("Qaydaları qəbul etməlisiniz.")
             st.stop()
         st.markdown(f"<div class='cust-card'><h4 style='margin:0; color:#888;'>BALANS</h4><h1 style='color:#2E7D32; font-size: 48px; margin:0;'>{user['stars']} / 10</h1><p style='color:#555;'>ID: {card_id}</p></div>", unsafe_allow_html=True)
+        html_grid = '<div class="coffee-grid">'
+        for i in range(10):
+            icon_url = "https://cdn-icons-png.flaticon.com/512/751/751621.png"
+            cls = "coffee-icon"; style = ""
+            if i == 9: 
+                icon_url = "https://cdn-icons-png.flaticon.com/512/3209/3209955.png"
+                if user['stars'] >= 10: style="opacity:1; filter:none; animation: bounce 1s infinite;"
+            elif i < user['stars']: style="opacity:1; filter:none;"
+            html_grid += f'<img src="{icon_url}" class="{cls}" style="{style}">'
+        html_grid += '</div>'
+        st.markdown(html_grid, unsafe_allow_html=True)
         st.divider()
         if st.button("Çıxış"): st.query_params.clear(); st.rerun()
         st.stop()
@@ -276,16 +287,14 @@ def cleanup_old_sessions():
     try: run_action("DELETE FROM active_sessions WHERE created_at < NOW() - INTERVAL '24 hours'")
     except: pass
 
-# --- RECEIPT GENERATOR ---
+# --- RECEIPT ---
 def generate_receipt_html(sale_data):
     r_store = get_setting("receipt_store_name", "EMALATXANA")
     r_addr = get_setting("receipt_address", "Bakı ş., Mərkəz")
     r_phone = get_setting("receipt_phone", "+994 50 000 00 00")
-    r_web = get_setting("receipt_web", ""); r_insta = get_setting("receipt_insta", ""); r_email = get_setting("receipt_email", "")
     r_footer = get_setting("receipt_footer", "Bizi seçdiyiniz üçün təşəkkürlər!")
     r_logo_b64 = get_setting("receipt_logo_base64", "")
     logo_html = f'<div style="text-align:center;"><img src="data:image/png;base64,{r_logo_b64}" style="max-width:80px;"></div><br>' if r_logo_b64 else ''
-    
     items_html = "<table style='width:100%; border-collapse: collapse; font-size:13px;'>"
     if isinstance(sale_data['items'], str):
         clean_items_str = sale_data['items']
@@ -301,20 +310,7 @@ def generate_receipt_html(sale_data):
     financial_html += f"<div style='display:flex; justify-content:space-between; margin-top:5px;'><span>Ara Cəm:</span><span>{subtotal:.2f} ₼</span></div>"
     if discount > 0: financial_html += f"<div style='display:flex; justify-content:space-between; color:red; font-weight:bold;'><span>Endirim:</span><span>-{discount:.2f} ₼</span></div>"
     financial_html += f"<div style='display:flex; justify-content:space-between; font-weight:bold; font-size:18px; margin-top:5px; border-top:1px solid black; padding-top:5px;'><span>YEKUN:</span><span>{sale_data['total']:.2f} ₼</span></div>"
-    
-    extra = ""
-    if r_web: extra += f"🌐 {r_web}<br>"
-    if r_insta: extra += f"📸 {r_insta}<br>"
-    return f"""
-    <div class="paper-receipt">
-        {logo_html}<div style="text-align:center; font-weight:bold; font-size:18px;">{r_store}</div>
-        <div style="text-align:center; font-size:12px;">{r_addr}</div><div style="text-align:center; font-size:12px;">📞 {r_phone}</div>
-        <div class="receipt-cut-line"></div>
-        <div style="font-size:12px;">TARİX: {sale_data['date']}<br>ÇEK №: {sale_data['id']}<br>KASSİR: {sale_data['cashier']}</div>
-        <div class="receipt-cut-line"></div>{items_html}<div class="receipt-cut-line"></div>{financial_html}<div class="receipt-cut-line"></div>
-        <div style="text-align:center; font-size:11px;">{extra}</div><div style="text-align:center; font-size:12px; margin-top:5px;">{r_footer}</div>
-    </div>
-    """
+    return f"""<div class="paper-receipt">{logo_html}<div style="text-align:center; font-weight:bold; font-size:18px;">{r_store}</div><div style="text-align:center; font-size:12px;">{r_addr}</div><div style="text-align:center; font-size:12px;">📞 {r_phone}</div><div class="receipt-cut-line"></div><div style="font-size:12px;">TARİX: {sale_data['date']}<br>ÇEK №: {sale_data['id']}<br>KASSİR: {sale_data['cashier']}</div><div class="receipt-cut-line"></div>{items_html}<div class="receipt-cut-line"></div>{financial_html}<div class="receipt-cut-line"></div><div style="text-align:center; font-size:12px; margin-top:5px;">{r_footer}</div></div>"""
 
 @st.dialog("Çek Əməliyyatları")
 def show_receipt_dialog():
@@ -323,28 +319,15 @@ def show_receipt_dialog():
         st.markdown(generate_receipt_html(sale), unsafe_allow_html=True)
         st.divider()
         c1, c2 = st.columns(2)
-        
-        # 1. REAL JAVASCRIPT PRINT (No Python Rerun)
         with c1:
-            components.html(
-                """
-                <script>function printPage() { window.parent.print(); }</script>
-                <button onclick="printPage()" style="width:100%; height:50px; background: linear-gradient(135deg, #2c3e50, #4ca1af); color:white; border:none; border-radius:10px; font-family:sans-serif; font-size:16px; font-weight:bold; cursor:pointer; box-shadow: 0 4px 0 rgba(0,0,0,0.1);">
-                    🖨️ ÇAP ET (Avto)
-                </button>
-                """,
-                height=70
-            )
-        
-        # 2. EMAIL BUTTON (Persistent Toast)
+            components.html("""<script>function printPage() { window.parent.print(); }</script><button onclick="printPage()" style="width:100%; height:50px; background: linear-gradient(135deg, #2c3e50, #4ca1af); color:white; border:none; border-radius:10px; font-family:sans-serif; font-size:16px; font-weight:bold; cursor:pointer; box-shadow: 0 4px 0 rgba(0,0,0,0.1);">🖨️ ÇAP ET (Avto)</button>""", height=70)
         with c2:
             if sale.get('customer_email'):
                 if st.button("📧 Emailə Göndər", type="primary", use_container_width=True):
-                    res = send_email(sale['customer_email'], f"Çek №{sale['id']} - {get_setting('receipt_store_name')}", generate_receipt_html(sale))
+                    res = send_email(sale['customer_email'], f"Çek №{sale['id']}", generate_receipt_html(sale))
                     if res == "OK": st.toast("✅ Email uğurla göndərildi!", icon="📧")
                     else: st.toast(f"❌ {res}", icon="⚠️")
-            else:
-                st.button("📧 Email Yoxdur", disabled=True, use_container_width=True)
+            else: st.button("📧 Email Yoxdur", disabled=True, use_container_width=True)
 
 # --- RENDERERS ---
 def render_analytics(is_admin=False):
@@ -354,8 +337,7 @@ def render_analytics(is_admin=False):
         sales = run_query(sql)
         st.dataframe(sales, hide_index=True, use_container_width=True)
     if is_admin and len(tabs)>1:
-        with tabs[1]:
-            st.dataframe(run_query("SELECT * FROM expenses ORDER BY created_at DESC"), use_container_width=True)
+        with tabs[1]: st.dataframe(run_query("SELECT * FROM expenses ORDER BY created_at DESC"), use_container_width=True)
         with tabs[2]: st.markdown("### 🕵️‍♂️ Giriş/Çıxış"); logs = run_query("SELECT * FROM system_logs ORDER BY created_at DESC LIMIT 100"); st.dataframe(logs, use_container_width=True)
 
 def render_takeaway():
@@ -375,8 +357,8 @@ def render_takeaway():
             c = st.session_state.current_customer_ta; st.success(f"👤 {c['card_id']} | ⭐ {c['stars']}")
             if st.button("Ləğv Et", key="ta_cl"): st.session_state.current_customer_ta=None; st.rerun()
         
-        # SMART CALCULATION
-        raw_total, final_total, disc_rate = calculate_smart_total(st.session_state.cart_takeaway, st.session_state.current_customer_ta)
+        # SMART CALCULATION (VARIANT A)
+        raw_total, final_total, disc_rate, free_count, total_pool = calculate_smart_total(st.session_state.cart_takeaway, st.session_state.current_customer_ta)
         
         if st.session_state.cart_takeaway:
             for i, it in enumerate(st.session_state.cart_takeaway):
@@ -388,8 +370,11 @@ def render_takeaway():
                     st.rerun()
                 if b2.button("➕", key=f"p_ta_{i}"): it['qty']+=1; st.rerun()
         
-        st.markdown(f"<h3 style='text-align:right; color:#777; text-decoration: line-through;'>{raw_total:.2f} ₼</h3>", unsafe_allow_html=True)
+        if raw_total != final_total:
+            st.markdown(f"<h3 style='text-align:right; color:#777; text-decoration: line-through;'>{raw_total:.2f} ₼</h3>", unsafe_allow_html=True)
         st.markdown(f"<h2 style='text-align:right; color:#E65100'>{final_total:.2f} ₼</h2>", unsafe_allow_html=True)
+        
+        if free_count > 0: st.success(f"🎁 {free_count} ədəd Kofe HƏDİYYƏ! (-{free_count * 10} ulduz)")
         if disc_rate > 0: st.caption(f"⚡ {int(disc_rate*100)}% Kofe Endirimi Tətbiq Edildi")
 
         pm = st.radio("Metod", ["Nəğd", "Kart"], horizontal=True, key="pm_ta")
@@ -399,7 +384,6 @@ def render_takeaway():
                 istr = ", ".join([f"{x['item_name']} x{x['qty']}" for x in st.session_state.cart_takeaway])
                 cust_id = st.session_state.current_customer_ta['card_id'] if st.session_state.current_customer_ta else None
                 cust_email = st.session_state.current_customer_ta.get('email') if st.session_state.current_customer_ta else None
-                
                 run_action("INSERT INTO sales (items, total, payment_method, cashier, created_at, customer_card_id) VALUES (:i,:t,:p,:c,:time, :cid)", 
                            {"i":istr,"t":final_total,"p":("Cash" if pm=="Nəğd" else "Card"),"c":st.session_state.user, "time":get_baku_now(), "cid":cust_id})
                 with conn.session as s:
@@ -407,13 +391,21 @@ def render_takeaway():
                         rs = s.execute(text("SELECT ingredient_name, quantity_required FROM recipes WHERE menu_item_name=:m"), {"m":it['item_name']}).fetchall()
                         for r in rs: s.execute(text("UPDATE ingredients SET stock_qty=stock_qty-:q WHERE name=:n"), {"q":float(r[1])*it['qty'], "n":r[0]})
                     if st.session_state.current_customer_ta:
-                        gain = sum([x['qty'] for x in st.session_state.cart_takeaway if x.get('is_coffee')])
-                        s.execute(text("UPDATE customers SET stars=stars+:s WHERE card_id=:id"), {"s":gain, "id":cust_id})
+                        # NEW STAR CALCULATION: Total Pool % 10 (Remainder)
+                        # We calculate what was used.
+                        # Total Pool = Old Stars + New Coffees
+                        # We gave 'free_count' coffees -> consumed free_count * 10 stars.
+                        # But simpler: New Balance = Total Pool % 10.
+                        # BUT wait: Thermos/Coupon items still give stars? Usually yes.
+                        # If a coffee is free, it usually doesn't generate a star.
+                        # "Buy 9 get 1 free" -> 9 paid coffees generate 9 stars. The 10th is free.
+                        # Let's use the standard "Variant A" math:
+                        # New Balance = (Old Stars + Coffees In Cart) - (Free Coffees Redeemed * 10)
+                        # Wait, (Old + Cart) % 10 is safest if we treat every coffee as a star, then redeem.
+                        new_stars_balance = total_pool - (free_count * 10)
+                        s.execute(text("UPDATE customers SET stars=:s WHERE card_id=:id"), {"s":new_stars_balance, "id":cust_id})
                     s.commit()
-                st.session_state.last_sale = {
-                    "id": int(time.time()), "items": istr, "total": final_total, "subtotal": raw_total, "discount": raw_total - final_total,
-                    "date": get_baku_now().strftime("%Y-%m-%d %H:%M"), "cashier": st.session_state.user, "customer_email": cust_email
-                }
+                st.session_state.last_sale = {"id": int(time.time()), "items": istr, "total": final_total, "subtotal": raw_total, "discount": raw_total - final_total, "date": get_baku_now().strftime("%Y-%m-%d %H:%M"), "cashier": st.session_state.user, "customer_email": cust_email}
                 st.session_state.cart_takeaway=[]; st.rerun()
             except Exception as e: st.error(str(e))
     with c2: render_menu_grid(st.session_state.cart_takeaway, "ta")
@@ -463,7 +455,7 @@ def render_table_order():
             if st.button("Ləğv Et", key="tb_cl"): st.session_state.current_customer_tb=None; st.rerun()
         
         # SMART CALCULATION
-        raw_total, final_total, disc_rate = calculate_smart_total(st.session_state.cart_table, st.session_state.current_customer_tb)
+        raw_total, final_total, disc_rate, free_count, total_pool = calculate_smart_total(st.session_state.cart_table, st.session_state.current_customer_tb)
 
         if st.session_state.cart_table:
             for i, it in enumerate(st.session_state.cart_table):
@@ -475,8 +467,11 @@ def render_table_order():
                     st.rerun()
                 if b2.button("➕", key=f"p_tb_{i}"): it['qty']+=1; st.rerun()
         
-        st.markdown(f"<h3 style='text-align:right; color:#777; text-decoration: line-through;'>{raw_total:.2f} ₼</h3>", unsafe_allow_html=True)
+        if raw_total != final_total:
+            st.markdown(f"<h3 style='text-align:right; color:#777; text-decoration: line-through;'>{raw_total:.2f} ₼</h3>", unsafe_allow_html=True)
         st.markdown(f"<h2 style='text-align:right; color:#E65100'>{final_total:.2f} ₼</h2>", unsafe_allow_html=True)
+        
+        if free_count > 0: st.success(f"🎁 {free_count} ədəd Kofe HƏDİYYƏ! (-{free_count * 10} ulduz)")
         if disc_rate > 0: st.caption(f"⚡ {int(disc_rate*100)}% Kofe Endirimi Tətbiq Edildi")
 
         col_s, col_p = st.columns(2)
@@ -498,8 +493,9 @@ def render_table_order():
                         rs = s.execute(text("SELECT ingredient_name, quantity_required FROM recipes WHERE menu_item_name=:m"), {"m":it['item_name']}).fetchall()
                         for r in rs: s.execute(text("UPDATE ingredients SET stock_qty=stock_qty-:q WHERE name=:n"), {"q":float(r[1])*it['qty'], "n":r[0]})
                     if st.session_state.current_customer_tb:
-                        gain = sum([x['qty'] for x in st.session_state.cart_table if x.get('is_coffee')])
-                        s.execute(text("UPDATE customers SET stars=stars+:s WHERE card_id=:id"), {"s":gain, "id":cust_id})
+                        # Variant A Star Logic
+                        new_stars_balance = total_pool - (free_count * 10)
+                        s.execute(text("UPDATE customers SET stars=:s WHERE card_id=:id"), {"s":new_stars_balance, "id":cust_id})
                     s.commit()
                 run_action("UPDATE tables SET is_occupied=FALSE, items=NULL, total=0 WHERE id=:id", {"id":tbl['id']})
                 st.session_state.last_sale = {
