@@ -17,10 +17,10 @@ import base64
 import json
 
 # ==========================================
-# === IRONWAVES POS - V2.8 PRODUCTION CANDIDATE ===
+# === IRONWAVES POS - V2.8.1 STABLE ===
 # ==========================================
 
-VERSION = "v2.8 PRODUCTION CANDIDATE"
+VERSION = "v2.8.1 STABLE"
 
 # --- INFRA ---
 RESEND_API_KEY = os.environ.get("RESEND_API_KEY")
@@ -183,7 +183,7 @@ def format_qty(val):
     if val % 1 == 0: return int(val)
     return val
 
-# --- 1. MÜŞTƏRİ PORTALI (LEGAL TEXT UPDATE) ---
+# --- 1. MÜŞTƏRİ PORTALI ---
 qp = st.query_params
 if "id" in qp:
     card_id = qp["id"]
@@ -225,7 +225,9 @@ if "id" in qp:
                     else: st.error("Qaydaları qəbul etməlisiniz.")
             st.stop()
 
-        st.markdown(f"<div class='cust-card'><h4 style='margin:0; color:#888;'>BALANS</h4><h1 style='color:#2E7D32; font-size: 48px; margin:0;'>{user['stars']} / 10</h1><p style="color:#555;">ID: {card_id}</p></div>", unsafe_allow_html=True)
+        # FIX: Replaced double quotes with single quotes in style attribute
+        st.markdown(f"<div class='cust-card'><h4 style='margin:0; color:#888;'>BALANS</h4><h1 style='color:#2E7D32; font-size: 48px; margin:0;'>{user['stars']} / 10</h1><p style='color:#555;'>ID: {card_id}</p></div>", unsafe_allow_html=True)
+        
         html_grid = '<div class="coffee-grid">'
         for i in range(10):
             icon_url = "https://cdn-icons-png.flaticon.com/512/751/751621.png"
@@ -634,7 +636,6 @@ else:
                         st.divider()
                         recs = run_query("SELECT id, ingredient_name, quantity_required FROM recipes WHERE menu_item_name=:n", {"n":p_name})
                         if not recs.empty:
-                            # Bulk Delete Logic
                             recs.insert(0, "Seç", False)
                             edited_recs = st.data_editor(recs, column_config={"Seç": st.column_config.CheckboxColumn(required=True)}, hide_index=True, use_container_width=True, key="rec_editor")
                             to_del = edited_recs[edited_recs['Seç']]['id'].tolist()
@@ -665,15 +666,10 @@ else:
                         cc_perc = st.number_input("Endirim (%)", 1, 100, 10)
                         cc_days = st.number_input("Müddət (Gün)", 1, 365, 7)
                         if st.form_submit_button("Hamıya Payla"):
-                            # Logic: custom_{percent}_{name}
                             ctype = f"custom_{cc_perc}_{cc_name}"
                             for _, r in run_query("SELECT card_id FROM customers").iterrows(): 
-                                run_action("INSERT INTO customer_coupons (card_id, coupon_type, expires_at) VALUES (:i, :c, NOW() + INTERVAL ':d days')", {"i":r['card_id'], "c":ctype, "d":cc_days}) # Fixed param binding issue logic handled by text() usually but here explicit f-string safer for Interval
-                                # Re-doing interval logic safely
                                 run_action(f"INSERT INTO customer_coupons (card_id, coupon_type, expires_at) VALUES ('{r['card_id']}', '{ctype}', NOW() + INTERVAL '{cc_days} days')")
                             st.success("Paylandı!")
-                
-                # Standard Coupons
                 c1, c2 = st.columns(2)
                 if c1.button("🎂 Ad Günü"): 
                     for _, r in run_query("SELECT card_id FROM customers").iterrows(): run_action("INSERT INTO customer_coupons (card_id, coupon_type, expires_at) VALUES (:i, 'disc_100_coffee', NOW() + INTERVAL '1 day')", {"i":r['card_id']})
@@ -684,7 +680,6 @@ else:
 
             with c_mail:
                 st.markdown("#### 📧 Email")
-                # Using Data Editor for Selection
                 all_customers = run_query("SELECT card_id, email, stars FROM customers")
                 all_customers.insert(0, "Seç", False)
                 edited_df = st.data_editor(all_customers, hide_index=True, use_container_width=True)
@@ -708,7 +703,6 @@ else:
                 n=st.text_input("Ad"); p=st.number_input("Qiymət", min_value=0.0, key="menu_p"); c=st.text_input("Kat"); ic=st.checkbox("Kofe?")
                 if st.form_submit_button("Əlavə"): run_action("INSERT INTO menu (item_name,price,category,is_active,is_coffee) VALUES (:n,:p,:c,TRUE,:ic)", {"n":n,"p":p,"c":c,"ic":ic}); st.rerun()
             
-            # Bulk Delete
             ml = run_query("SELECT * FROM menu")
             if not ml.empty:
                 ml.insert(0, "Seç", False)
