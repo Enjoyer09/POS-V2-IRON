@@ -17,10 +17,10 @@ import base64
 import json
 
 # ==========================================
-# === IRONWAVES POS - V2.5 PRODUCTION READY ===
+# === IRONWAVES POS - V2.6 FINAL SECURE ===
 # ==========================================
 
-VERSION = "v2.5 Production Ready"
+VERSION = "v2.6 FINAL SECURE"
 
 # --- INFRA ---
 RESEND_API_KEY = os.environ.get("RESEND_API_KEY")
@@ -31,7 +31,7 @@ DEFAULT_SENDER_EMAIL = "info@ironwaves.store"
 # --- CONFIG ---
 st.set_page_config(page_title=f"Ironwaves POS {VERSION}", page_icon="☕", layout="wide", initial_sidebar_state="collapsed")
 
-# --- CSS (BOLD & PROFESSIONAL) ---
+# --- CSS ---
 st.markdown("""
     <style>
     @import url('https://fonts.googleapis.com/css2?family=Oswald:wght@400;500;700;900&display=swap');
@@ -54,24 +54,11 @@ st.markdown("""
 
     /* GENERAL BUTTONS */
     div.stButton > button { 
-        border-radius: 12px !important; 
-        height: 60px !important; 
-        font-weight: 700 !important; 
-        box-shadow: 0 4px 0 rgba(0,0,0,0.1) !important; 
-        transition: all 0.1s !important; 
+        border-radius: 12px !important; height: 60px !important; font-weight: 700 !important; 
+        box-shadow: 0 4px 0 rgba(0,0,0,0.1) !important; transition: all 0.1s !important; 
     }
     div.stButton > button:active { transform: translateY(3px) !important; box-shadow: none !important; }
     div.stButton > button[kind="primary"] { background: linear-gradient(135deg, #FF6B35, #FF8C00) !important; color: white !important; }
-
-    /* MENU PRODUCT BUTTONS (CUSTOM STYLE) */
-    /* Bu stil render_menu_grid-dəki düymələrə aiddir */
-    .menu-btn {
-        height: 100px !important;
-        font-size: 20px !important;
-        font-weight: 900 !important; /* BOLD */
-        white-space: pre-wrap !important; /* Alt-alta yazmaq üçün */
-        border: 2px solid #eee !important;
-    }
 
     /* TABLE BUTTONS */
     div.stButton > button[kind="secondary"] {
@@ -162,7 +149,8 @@ def verify_password(p, h):
     try: return bcrypt.checkpw(p.encode(), h.encode()) if h.startswith('$2b$') else p == h
     except: return False
 def log_system(user, action):
-    try: run_action("INSERT INTO system_logs (username, action, created_at) VALUES (:u, :a, NOW())", {"u":user, "a":action})
+    # Log time in Baku Time for consistency
+    try: run_action("INSERT INTO system_logs (username, action, created_at) VALUES (:u, :a, :t)", {"u":user, "a":action, "t":get_baku_now()})
     except: pass
 def get_setting(key, default=""):
     try:
@@ -193,16 +181,27 @@ def send_email(to_email, subject, body):
 def format_qty(val):
     if val % 1 == 0: return int(val)
     return val
+
+# --- SECURE SESSION MANAGER ---
 def check_session_token():
+    # 1. URL-dən tokeni al
     token = st.query_params.get("token")
     if token:
         try:
+            # 2. Bazadan yoxla
             res = run_query("SELECT username, role FROM active_sessions WHERE token=:t", {"t":token})
             if not res.empty:
                 st.session_state.logged_in = True
                 st.session_state.user = res.iloc[0]['username']
                 st.session_state.role = res.iloc[0]['role']
+                # 3. SECURITY: URL-i təmizlə ki, token qalmasın
+                st.query_params.clear()
         except: pass
+
+def cleanup_old_sessions():
+    # 24 saatdan köhnə sessiyaları sil
+    try: run_action("DELETE FROM active_sessions WHERE created_at < NOW() - INTERVAL '24 hours'")
+    except: pass
 
 # --- RECEIPT ---
 def generate_receipt_html(sale_data):
@@ -279,58 +278,14 @@ def render_analytics(is_admin=False):
             st.markdown("### 💰 Xalis Mənfəət (P&L)")
             with st.expander("➕ Xərc Əlavə Et"):
                 with st.form("add_exp"):
-                    t=st.text_input("Təyinat"); a=st.number_input("Məbləğ",0.0); c=st.selectbox("Kat", ["İcarə","Kommunal","Maaş","Təchizat"]); 
-                    if st.form_submit_button("Əlavə Et"): run_action("INSERT INTO expenses (title,amount,category) VALUES (:t,:a,:c)",{"t":t,"a":a,"c":c}); st.rerun()
+                    t=st.text_input("Təyinat"); a=st.number_input("Məbləğ (AZN)", min_value=0.0); c=st.selectbox("Kat", ["İcarə","Kommunal","Maaş","Təchizat"]); 
+                    if st.form_submit_button("Əlavə Et"): run_action("INSERT INTO expenses (title,amount,category,created_at) VALUES (:t,:a,:c,:time)",{"t":t,"a":a,"c":c, "time":get_baku_now()}); st.rerun()
             ts = run_query("SELECT SUM(total) as t FROM sales").iloc[0]['t'] or 0; te = run_query("SELECT SUM(amount) as t FROM expenses").iloc[0]['t'] or 0; np = ts - te
             c1,c2,c3 = st.columns(3); c1.metric("Gəlir", f"{ts:.2f} ₼"); c2.metric("Xərc", f"{te:.2f} ₼"); c3.metric("Mənfəət", f"{np:.2f} ₼", delta=np)
             st.dataframe(run_query("SELECT * FROM expenses ORDER BY created_at DESC LIMIT 50"), use_container_width=True)
         with tabs[2]:
             st.markdown("### 🕵️‍♂️ Giriş/Çıxış"); logs = run_query("SELECT * FROM system_logs ORDER BY created_at DESC LIMIT 100")
             if not logs.empty: logs['created_at'] = pd.to_datetime(logs['created_at']) + pd.Timedelta(hours=4); st.dataframe(logs, use_container_width=True)
-
-# --- MENU RENDERER (SMART BUTTONS) ---
-def render_menu_grid(cart_ref, key_prefix):
-    cats = run_query("SELECT DISTINCT category FROM menu WHERE is_active=TRUE")
-    if not cats.empty:
-        cl = ["Hamısı"] + sorted(cats['category'].tolist())
-        sc = st.radio("Kataloq", cl, horizontal=True, label_visibility="collapsed", key=f"cat_{key_prefix}")
-        sql = "SELECT * FROM menu WHERE is_active=TRUE"; p = {}; 
-        if sc != "Hamısı": sql += " AND category=:c"; p["c"] = sc
-        sql += " ORDER BY price ASC"
-        prods = run_query(sql, p)
-        gr = {}
-        for _, r in prods.iterrows():
-            n = r['item_name']; pts = n.split()
-            if len(pts)>1 and pts[-1] in ['S','M','L','XL','Single','Double']:
-                base = " ".join(pts[:-1]); gr.setdefault(base, []).append(r)
-            else: gr[n] = [r]
-        
-        cols = st.columns(4); i=0
-        
-        @st.dialog("Ölçü Seçimi")
-        def show_v(bn, its):
-            st.write(f"### {bn}")
-            for it in its:
-                lbl = it['item_name'].replace(bn, "").strip()
-                # Popup içindəki düymələr
-                if st.button(f"{lbl}\n{it['price']} ₼", key=f"v_{it['id']}_{key_prefix}", use_container_width=True):
-                    cart_ref.append({'item_name':it['item_name'], 'price':float(it['price']), 'qty':1, 'is_coffee':it['is_coffee']}); st.rerun()
-
-        for bn, its in gr.items():
-            with cols[i%4]:
-                if len(its)>1:
-                    # Multi (Variant) - Orange-ish
-                    # Label: Name + (Seçim)
-                    label = f"{bn}\n(Seçim)"
-                    if st.button(label, key=f"g_{bn}_{key_prefix}", use_container_width=True): show_v(bn, its)
-                else:
-                    # Single - White/Green Border
-                    it = its[0]
-                    # Label: Name + Price
-                    label = f"{it['item_name']}\n{it['price']} ₼"
-                    if st.button(label, key=f"s_{it['id']}_{key_prefix}", use_container_width=True):
-                        cart_ref.append({'item_name':it['item_name'], 'price':float(it['price']), 'qty':1, 'is_coffee':it['is_coffee']}); st.rerun()
-            i+=1
 
 def render_takeaway():
     c1, c2 = st.columns([1.5, 3])
@@ -369,8 +324,8 @@ def render_takeaway():
             if not st.session_state.cart_takeaway: st.error("Boşdur!"); st.stop()
             try:
                 istr = ", ".join([f"{x['item_name']} x{x['qty']}" for x in st.session_state.cart_takeaway])
-                run_action("INSERT INTO sales (items, total, payment_method, cashier, created_at) VALUES (:i,:t,:p,:c,NOW())", 
-                           {"i":istr,"t":tb,"p":("Cash" if pm=="Nəğd" else "Card"),"c":st.session_state.user})
+                run_action("INSERT INTO sales (items, total, payment_method, cashier, created_at) VALUES (:i,:t,:p,:c,:time)", 
+                           {"i":istr,"t":tb,"p":("Cash" if pm=="Nəğd" else "Card"),"c":st.session_state.user, "time":get_baku_now()})
                 with conn.session as s:
                     for it in st.session_state.cart_takeaway:
                         rs = s.execute(text("SELECT ingredient_name, quantity_required FROM recipes WHERE menu_item_name=:m"), {"m":it['item_name']}).fetchall()
@@ -464,8 +419,8 @@ def render_table_order():
                 raw_items = ", ".join([f"{x['item_name']} x{x['qty']}" for x in st.session_state.cart_table])
                 istr = f"[{tbl['label']}] " + raw_items
                 
-                run_action("INSERT INTO sales (items, total, payment_method, cashier, created_at) VALUES (:i,:t,:p,:c,NOW())", 
-                           {"i":istr,"t":tb,"p":("Cash" if pm=="Nəğd" else "Card"),"c":st.session_state.user})
+                run_action("INSERT INTO sales (items, total, payment_method, cashier, created_at) VALUES (:i,:t,:p,:c,:time)", 
+                           {"i":istr,"t":tb,"p":("Cash" if pm=="Nəğd" else "Card"),"c":st.session_state.user, "time":get_baku_now()})
                 with conn.session as s:
                     for it in st.session_state.cart_table:
                         rs = s.execute(text("SELECT ingredient_name, quantity_required FROM recipes WHERE menu_item_name=:m"), {"m":it['item_name']}).fetchall()
@@ -482,6 +437,43 @@ def render_table_order():
 
     with c2: render_menu_grid(st.session_state.cart_table, "tb")
 
+def render_menu_grid(cart_ref, key_prefix):
+    cats = run_query("SELECT DISTINCT category FROM menu WHERE is_active=TRUE")
+    if not cats.empty:
+        cl = ["Hamısı"] + sorted(cats['category'].tolist())
+        sc = st.radio("Kataloq", cl, horizontal=True, label_visibility="collapsed", key=f"cat_{key_prefix}")
+        sql = "SELECT * FROM menu WHERE is_active=TRUE"; p = {}; 
+        if sc != "Hamısı": sql += " AND category=:c"; p["c"] = sc
+        sql += " ORDER BY price ASC"
+        prods = run_query(sql, p)
+        gr = {}
+        for _, r in prods.iterrows():
+            n = r['item_name']; pts = n.split()
+            if len(pts)>1 and pts[-1] in ['S','M','L','XL','Single','Double']:
+                base = " ".join(pts[:-1]); gr.setdefault(base, []).append(r)
+            else: gr[n] = [r]
+        
+        cols = st.columns(4); i=0
+        @st.dialog("Ölçü Seçimi")
+        def show_v(bn, its):
+            st.write(f"### {bn}")
+            for it in its:
+                lbl = it['item_name'].replace(bn, "").strip()
+                if st.button(f"{lbl}\n{it['price']} ₼", key=f"v_{it['id']}_{key_prefix}", use_container_width=True):
+                    cart_ref.append({'item_name':it['item_name'], 'price':float(it['price']), 'qty':1, 'is_coffee':it['is_coffee']}); st.rerun()
+
+        for bn, its in gr.items():
+            with cols[i%4]:
+                if len(its)>1:
+                    label = f"{bn}\n(Seçim)"
+                    if st.button(label, key=f"g_{bn}_{key_prefix}", use_container_width=True): show_v(bn, its)
+                else:
+                    it = its[0]
+                    label = f"{it['item_name']}\n{it['price']} ₼"
+                    if st.button(label, key=f"s_{it['id']}_{key_prefix}", use_container_width=True):
+                        cart_ref.append({'item_name':it['item_name'], 'price':float(it['price']), 'qty':1, 'is_coffee':it['is_coffee']}); st.rerun()
+            i+=1
+
 # --- INIT STATE ---
 if 'logged_in' not in st.session_state: st.session_state.logged_in = False
 if 'cart_takeaway' not in st.session_state: st.session_state.cart_takeaway = []
@@ -492,7 +484,10 @@ if 'last_sale' not in st.session_state: st.session_state.last_sale = None
 if 'selected_table' not in st.session_state: st.session_state.selected_table = None
 
 check_session_token()
-if st.session_state.get('logged_in'): run_action("UPDATE users SET last_seen = NOW() WHERE username = :u", {"u": st.session_state.user})
+if st.session_state.get('logged_in'):
+    cleanup_old_sessions()
+    run_action("UPDATE users SET last_seen = :t WHERE username = :u", {"t":get_baku_now(), "u": st.session_state.user})
+
 if 'last_sale' in st.session_state and st.session_state.last_sale: show_receipt_dialog(); st.session_state.last_sale = None
 
 # --- MAIN ---
@@ -510,7 +505,7 @@ if not st.session_state.logged_in:
                     for _, row in udf.iterrows():
                         if verify_password(pin, row['password']):
                             st.session_state.logged_in=True; st.session_state.user=row['username']; st.session_state.role='staff'
-                            tok=secrets.token_urlsafe(16); run_action("INSERT INTO active_sessions (token,username,role) VALUES (:t,:u,:r)", {"t":tok,"u":row['username'],"r":'staff'})
+                            tok=secrets.token_urlsafe(16); run_action("INSERT INTO active_sessions (token,username,role,created_at) VALUES (:t,:u,:r,:time)", {"t":tok,"u":row['username'],"r":'staff',"time":get_baku_now()})
                             log_system(row['username'], "Login (Staff)"); st.query_params["token"] = tok; st.rerun(); found=True; break
                     if not found: st.error("Yanlış PIN!")
         with tabs[1]:
@@ -520,7 +515,7 @@ if not st.session_state.logged_in:
                     udf = run_query("SELECT * FROM users WHERE LOWER(username)=LOWER(:u) AND role='admin'", {"u":u})
                     if not udf.empty and verify_password(p, udf.iloc[0]['password']):
                         st.session_state.logged_in=True; st.session_state.user=u; st.session_state.role='admin'
-                        tok=secrets.token_urlsafe(16); run_action("INSERT INTO active_sessions (token,username,role) VALUES (:t,:u,:r)", {"t":tok,"u":u,"r":'admin'})
+                        tok=secrets.token_urlsafe(16); run_action("INSERT INTO active_sessions (token,username,role,created_at) VALUES (:t,:u,:r,:time)", {"t":tok,"u":u,"r":'admin',"time":get_baku_now()})
                         log_system(u, "Login (Admin)"); st.query_params["token"] = tok; st.rerun()
                     else: st.error("Səhv!")
 else:
@@ -547,7 +542,7 @@ else:
             c1, c2 = st.columns([1, 2])
             with c1:
                 with st.form("stk"):
-                    st.write("Yeni Mal"); n=st.text_input("Ad"); q=st.number_input("Say"); u=st.selectbox("Vahid",["gr","ml","ədəd"]); c=st.selectbox("Kat",["Bar","Süd","Sirop","Qablaşdırma"])
+                    st.write("Yeni Mal"); n=st.text_input("Ad"); q=st.number_input("Say", min_value=0.0); u=st.selectbox("Vahid",["gr","ml","ədəd"]); c=st.selectbox("Kat",["Bar","Süd","Sirop","Qablaşdırma"])
                     if st.form_submit_button("Əlavə Et", help="Add new"): run_action("INSERT INTO ingredients (name,stock_qty,unit,category) VALUES (:n,:q,:u,:c) ON CONFLICT (name) DO UPDATE SET stock_qty=ingredients.stock_qty+:q", {"n":n,"q":q,"u":u,"c":c}); st.rerun()
             with c2:
                 sql = "SELECT * FROM ingredients"; p = {}; 
@@ -555,26 +550,23 @@ else:
                 sql += " ORDER BY category, name"; df = run_query(sql, p)
                 @st.dialog("Düzəliş")
                 def ed_stk(id, n, q):
-                    nq = st.number_input("Yeni", value=float(q), key=f"nq_{id}")
+                    nq = st.number_input("Yeni", value=float(q), min_value=0.0, key=f"nq_{id}")
                     if st.button("Saxla", key=f"sv_{id}"): run_action("UPDATE ingredients SET stock_qty=:q WHERE id=:id", {"q":nq,"id":id}); st.rerun()
                 if not df.empty:
                     cols = st.columns(2)
                     for idx, r in df.iterrows():
                         with cols[idx%2]:
                             if st.button(f"{r['name']} ({format_qty(r['stock_qty'])})", key=f"iv_{r['id']}", use_container_width=True): ed_stk(r['id'], r['name'], r['stock_qty'])
-        with tabs[3]: # Resept (HOTFIX: SEARCH & EXPANDER)
+        with tabs[3]: # Resept
             st.subheader("📜 Reseptlər")
             search_rec = st.text_input("🔎 Resept Axtar", placeholder="Məhsul adı yaz...")
-            
             sql_menu = "SELECT item_name, id FROM menu WHERE is_active=TRUE"
             params_menu = {}
             if search_rec:
                 sql_menu += " AND item_name ILIKE :s"
                 params_menu['s'] = f"%{search_rec}%"
             sql_menu += " ORDER BY item_name"
-            
             menu_items = run_query(sql_menu, params_menu)
-            
             if not menu_items.empty:
                 for idx, m_row in menu_items.iterrows():
                     m_name = m_row['item_name']
@@ -593,7 +585,7 @@ else:
                             ings = run_query("SELECT name, unit FROM ingredients ORDER BY name")
                             c_i, c_q = st.columns(2)
                             i_sel = c_i.selectbox("Xammal", ings['name'].tolist(), key=f"isel_{idx}")
-                            q_val = c_q.number_input("Miqdar", 0.1, key=f"iq_{idx}")
+                            q_val = c_q.number_input("Miqdar", 0.1, min_value=0.0, key=f"iq_{idx}")
                             if st.form_submit_button("➕ Əlavə Et"):
                                 run_action("INSERT INTO recipes (menu_item_name, ingredient_name, quantity_required) VALUES (:m,:i,:q)", 
                                            {"m":m_name, "i":i_sel, "q":q_val}); st.rerun()
@@ -643,13 +635,13 @@ else:
                     df = pd.read_excel(up); run_action("DELETE FROM menu")
                     for _, row in df.iterrows(): run_action("INSERT INTO menu (item_name,price,category,is_active,is_coffee) VALUES (:n,:p,:c,TRUE,:ic)", {"n":row['item_name'],"p":row['price'],"c":row['category'],"ic":row.get('is_coffee',False)}); st.rerun()
             with st.form("nm"):
-                n=st.text_input("Ad"); p=st.number_input("Qiymət"); c=st.text_input("Kat"); ic=st.checkbox("Kofe?")
+                n=st.text_input("Ad"); p=st.number_input("Qiymət", min_value=0.0); c=st.text_input("Kat"); ic=st.checkbox("Kofe?")
                 if st.form_submit_button("Əlavə"): run_action("INSERT INTO menu (item_name,price,category,is_active,is_coffee) VALUES (:n,:p,:c,TRUE,:ic)", {"n":n,"p":p,"c":c,"ic":ic}); st.rerun()
             ml = run_query("SELECT * FROM menu"); st.dataframe(ml)
             if not ml.empty:
                 dm = st.selectbox("Silinəcək Məhsul", ml['item_name'].unique(), key="del_menu_select")
                 if st.button("❌ Məhsulu Sil", key="btn_del_menu_item"): run_action("DELETE FROM menu WHERE item_name=:n", {"n":dm}); st.rerun()
-        with tabs[7]: # Ayarlar
+        with tabs[7]: # Ayarlar (HOTFIX: RECEIPT MANUAL & PASSWORD)
             st.subheader("⚙️ Ayarlar")
             c1, c2 = st.columns(2)
             with c1:
@@ -711,7 +703,7 @@ else:
                     else: st.error("Şifrə səhvdir")
 
         with tabs[9]: # QR
-            cnt = st.number_input("Say", 1, 50); k = st.selectbox("Növ", ["Standard", "Termos", "10%", "20%", "50%"])
+            cnt = st.number_input("Say", 1, 50, min_value=1); k = st.selectbox("Növ", ["Standard", "Termos", "10%", "20%", "50%"])
             if st.button("Yarat", key="gen_qr"):
                 zb = BytesIO()
                 with zipfile.ZipFile(zb, "w") as zf:
