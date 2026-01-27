@@ -17,10 +17,10 @@ import base64
 import json
 
 # ==========================================
-# === IRONWAVES POS - V2.4 HYBRID ===
+# === IRONWAVES POS - V3.6 HYBRID ===
 # ==========================================
 
-VERSION = "v2.4 HYBRID"
+VERSION = "v3.6 HYBRID (Integrated)"
 
 # --- INFRA ---
 RESEND_API_KEY = os.environ.get("RESEND_API_KEY")
@@ -57,40 +57,39 @@ st.markdown("""
     .pos-card-body { background: white; border: 1px solid #ddd; border-top: none; border-radius: 0 0 12px 12px; padding: 15px; text-align: center; box-shadow: 0 4px 10px rgba(0,0,0,0.05); }
     .pos-price { font-size: 20px; color: #333; font-weight: bold; }
 
-    /* TABLE CARDS */
-    .table-card {
-        padding: 20px; border-radius: 15px; text-align: center; color: white; cursor: pointer;
-        transition: transform 0.2s; box-shadow: 0 5px 15px rgba(0,0,0,0.1); margin-bottom: 15px;
+    /* BUTTONS (General) */
+    div.stButton > button { 
+        border-radius: 12px !important; font-weight: 700 !important; 
+        box-shadow: 0 4px 0 rgba(0,0,0,0.1) !important; transition: all 0.1s !important; 
     }
-    .table-card:hover { transform: scale(1.03); }
-    .table-empty { background: linear-gradient(135deg, #2E7D32, #66BB6A); border: 2px solid #1B5E20; }
-    .table-occupied { background: linear-gradient(135deg, #C62828, #E53935); border: 2px solid #B71C1C; animation: pulse-red 2s infinite; }
-    .table-num { font-size: 24px; font-weight: bold; }
-    .table-bill { font-size: 18px; margin-top: 5px; font-weight: 500; }
-    @keyframes pulse-red { 0% {box-shadow: 0 0 0 0 rgba(229, 57, 53, 0.4);} 70% {box-shadow: 0 0 0 10px rgba(229, 57, 53, 0);} 100% {box-shadow: 0 0 0 0 rgba(229, 57, 53, 0);} }
-
-    /* BUTTONS */
-    div.stButton > button { border-radius: 12px !important; height: 50px !important; font-weight: 700 !important; box-shadow: 0 4px 0 rgba(0,0,0,0.1) !important; transition: all 0.1s !important; }
     div.stButton > button:active { transform: translateY(3px) !important; box-shadow: none !important; }
-    div.stButton > button[kind="primary"] { background: linear-gradient(135deg, #FF6B35, #FF8C00) !important; color: white !important; }
+    
+    /* MASA DÜYMƏLƏRİ ÜÇÜN XÜSUSİ STİL (INTEGRATED) */
+    /* Occupied (Primary) -> Red/Orange Pulse */
+    div.stButton > button[kind="primary"] { 
+        background: linear-gradient(135deg, #C62828, #E53935) !important; 
+        color: white !important; 
+        border: 2px solid #B71C1C !important;
+        height: 100px !important; /* Masalar hündür olsun */
+        font-size: 22px !important;
+        white-space: pre-wrap !important; /* Alt-alta yazmaq üçün */
+    }
+    
+    /* Empty (Secondary) -> Green Border */
+    div.stButton > button[kind="secondary"] { 
+        background: white !important; 
+        color: #2E7D32 !important; 
+        border: 3px solid #2E7D32 !important;
+        height: 100px !important;
+        font-size: 22px !important;
+        white-space: pre-wrap !important;
+    }
 
     /* STOCK CARDS */
     .stock-card { background: white; border-radius: 12px; padding: 12px; margin-bottom: 8px; box-shadow: 0 2px 5px rgba(0,0,0,0.05); border: 1px solid #eee; display: flex; justify-content: space-between; align-items: center; }
     .stock-card.low { border-left: 6px solid #E74C3C; background: #FFF5F5; }
     .stock-card.ok { border-left: 6px solid #2ECC71; }
     
-    /* RECEIPT PREVIEW */
-    .receipt-container {
-        font-family: 'Courier Prime', monospace; background-color: #fff; padding: 20px; width: 100%; max-width: 350px;
-        margin: 0 auto; border: 1px solid #ddd; box-shadow: 0 10px 25px rgba(0,0,0,0.1); text-align: center; color: #000;
-    }
-    .receipt-logo { max-width: 80px; margin-bottom: 10px; }
-    .receipt-header { font-size: 18px; font-weight: bold; margin-bottom: 5px; text-transform: uppercase; }
-    .receipt-info { font-size: 12px; margin-bottom: 10px; border-bottom: 1px dashed #000; padding-bottom: 10px; }
-    .receipt-items { font-size: 14px; text-align: left; width: 100%; margin-bottom: 10px; }
-    .receipt-total { font-size: 20px; font-weight: bold; text-align: right; border-top: 1px dashed #000; border-bottom: 1px dashed #000; padding: 10px 0; margin: 10px 0; }
-    .receipt-footer { font-size: 12px; margin-top: 10px; font-style: italic; }
-
     .footer { position: fixed; left: 0; bottom: 0; width: 100%; background: #eee; color: #777; text-align: center; padding: 2px; font-size: 10px; z-index: 999; }
     </style>
 """, unsafe_allow_html=True)
@@ -184,6 +183,8 @@ def send_email(to_email, subject, body):
 def format_qty(val):
     if val % 1 == 0: return int(val)
     return val
+
+# --- FIX: MISSING FUNCTION RESTORED ---
 def check_session_token():
     token = st.query_params.get("token")
     if token:
@@ -195,7 +196,7 @@ def check_session_token():
                 st.session_state.role = res.iloc[0]['role']
         except: pass
 
-# --- RECEIPT ---
+# --- RECEIPT GENERATOR ---
 def generate_receipt_html(sale_data):
     r_header = get_setting("receipt_header", "EMALATXANA")
     r_address = get_setting("receipt_address", "Bakı şəhəri")
@@ -308,11 +309,14 @@ def render_table_grid():
     cols = st.columns(3)
     for idx, row in tables.iterrows():
         with cols[idx % 3]:
-            cls = "table-occupied" if row['is_occupied'] else "table-empty"
-            st.markdown(f"<div class='table-card {cls}'><div class='table-num'>{row['label']}</div><div class='table-bill'>{row['total']} ₼</div></div>", unsafe_allow_html=True)
-            if st.button(f"{'👁️ Bax' if row['is_occupied'] else '➕ Sifariş'}", key=f"tbl_{row['id']}", use_container_width=True):
+            # INTEGRATED BUTTON (NO CARD)
+            is_occ = row['is_occupied']
+            label = f"{row['label']}\n{row['total']} ₼" if is_occ else f"{row['label']}\n(BOŞ)"
+            kind = "primary" if is_occ else "secondary"
+            
+            if st.button(label, key=f"tbl_btn_{row['id']}", type=kind, use_container_width=True):
                 st.session_state.selected_table = row.to_dict()
-                st.session_state.cart_table = json.loads(row['items']) if row['is_occupied'] and row['items'] else []
+                st.session_state.cart_table = json.loads(row['items']) if is_occ and row['items'] else []
                 st.rerun()
 
 def render_table_order():
@@ -418,6 +422,35 @@ def render_menu_grid(cart_ref, key_prefix):
                     if st.button("ƏLAVƏ", key=f"s_{it['id']}_{key_prefix}", use_container_width=True):
                         cart_ref.append({'item_name':it['item_name'], 'price':float(it['price']), 'qty':1, 'is_coffee':it['is_coffee']}); st.rerun()
             i+=1
+
+def render_analytics(is_admin=False):
+    tabs = st.tabs(["Satışlar", "Xərclər (P&L)", "Sistem Logları"]) if is_admin else st.tabs(["Mənim Satışlarım"])
+    with tabs[0]:
+        st.markdown("### 📊 Satış Hesabatı")
+        f_mode = st.radio("Vaxt", ["Günlük", "Aylıq"], horizontal=True, key=f"am_{is_admin}")
+        sql = "SELECT * FROM sales"; p = {}
+        if not is_admin: sql += " WHERE cashier = :u"; p['u'] = st.session_state.user
+        else: sql += " WHERE 1=1" 
+        if f_mode == "Günlük": d = st.date_input("Gün", datetime.date.today(), key=f"d_{is_admin}"); sql += " AND DATE(created_at AT TIME ZONE 'Asia/Baku') = :d"; p['d'] = d
+        else: d = st.date_input("Ay", datetime.date.today(), key=f"m_{is_admin}"); sql += " AND TO_CHAR(created_at AT TIME ZONE 'Asia/Baku', 'YYYY-MM') = :m"; p['m'] = d.strftime("%Y-%m")
+        sql += " ORDER BY created_at DESC"; sales = run_query(sql, p)
+        if not sales.empty:
+            sales['created_at'] = pd.to_datetime(sales['created_at']) + pd.Timedelta(hours=4); t = sales['total'].sum()
+            st.metric("Dövriyyə", f"{t:.2f} ₼"); st.dataframe(sales[['id', 'created_at', 'items', 'total', 'payment_method', 'cashier']], hide_index=True, use_container_width=True)
+        else: st.info("Satış yoxdur")
+    if is_admin and len(tabs) > 1:
+        with tabs[1]:
+            st.markdown("### 💰 Xalis Mənfəət (P&L)")
+            with st.expander("➕ Xərc Əlavə Et"):
+                with st.form("add_exp"):
+                    t=st.text_input("Təyinat"); a=st.number_input("Məbləğ",0.0); c=st.selectbox("Kat", ["İcarə","Kommunal","Maaş","Təchizat"]); 
+                    if st.form_submit_button("Əlavə Et"): run_action("INSERT INTO expenses (title,amount,category) VALUES (:t,:a,:c)",{"t":t,"a":a,"c":c}); st.rerun()
+            ts = run_query("SELECT SUM(total) as t FROM sales").iloc[0]['t'] or 0; te = run_query("SELECT SUM(amount) as t FROM expenses").iloc[0]['t'] or 0; np = ts - te
+            c1,c2,c3 = st.columns(3); c1.metric("Gəlir", f"{ts:.2f} ₼"); c2.metric("Xərc", f"{te:.2f} ₼"); c3.metric("Mənfəət", f"{np:.2f} ₼", delta=np)
+            st.dataframe(run_query("SELECT * FROM expenses ORDER BY created_at DESC LIMIT 50"), use_container_width=True)
+        with tabs[2]:
+            st.markdown("### 🕵️‍♂️ Giriş/Çıxış"); logs = run_query("SELECT * FROM system_logs ORDER BY created_at DESC LIMIT 100")
+            if not logs.empty: logs['created_at'] = pd.to_datetime(logs['created_at']) + pd.Timedelta(hours=4); st.dataframe(logs, use_container_width=True)
 
 # --- INIT STATE ---
 if 'logged_in' not in st.session_state: st.session_state.logged_in = False
