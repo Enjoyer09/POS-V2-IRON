@@ -1,5 +1,5 @@
 import streamlit as st
-import streamlit.components.v1 as components  # YENİ: Print üçün vacibdir
+import streamlit.components.v1 as components
 import pandas as pd
 import random
 import time
@@ -18,10 +18,10 @@ import base64
 import json
 
 # ==========================================
-# === IRONWAVES POS - V3.2 PLATINUM STABLE ===
+# === IRONWAVES POS - V3.3 PLATINUM FINAL ===
 # ==========================================
 
-VERSION = "v3.2 PLATINUM STABLE"
+VERSION = "v3.3 PLATINUM FINAL"
 
 # --- INFRA ---
 RESEND_API_KEY = os.environ.get("RESEND_API_KEY")
@@ -32,7 +32,7 @@ DEFAULT_SENDER_EMAIL = "info@ironwaves.store"
 # --- CONFIG ---
 st.set_page_config(page_title=f"Ironwaves POS {VERSION}", page_icon="☕", layout="wide", initial_sidebar_state="collapsed")
 
-# --- CSS ---
+# --- CSS (RADICAL PRINT FIX) ---
 st.markdown("""
     <style>
     @import url('https://fonts.googleapis.com/css2?family=Oswald:wght@400;500;700;900&display=swap');
@@ -42,7 +42,7 @@ st.markdown("""
     header, #MainMenu, footer, [data-testid="stSidebar"] { display: none !important; }
     .block-container { padding-top: 1rem !important; padding-bottom: 2rem !important; max-width: 100% !important; }
     
-    /* TABS */
+    /* UI ELEMENTS */
     button[data-baseweb="tab"] {
         font-family: 'Oswald', sans-serif !important; font-size: 18px !important; font-weight: 700 !important;
         background-color: white !important; border: 2px solid #FFCCBC !important; border-radius: 12px !important;
@@ -52,50 +52,51 @@ st.markdown("""
         background: linear-gradient(135deg, #FF6B35, #FF8C00) !important; border-color: #FF6B35 !important; color: white !important;
         box-shadow: 0 4px 12px rgba(255, 107, 53, 0.4);
     }
-
-    /* BUTTONS */
-    div.stButton > button { 
-        border-radius: 12px !important; height: 60px !important; font-weight: 700 !important; 
-        box-shadow: 0 4px 0 rgba(0,0,0,0.1) !important; transition: all 0.1s !important; 
-    }
+    div.stButton > button { border-radius: 12px !important; height: 60px !important; font-weight: 700 !important; box-shadow: 0 4px 0 rgba(0,0,0,0.1) !important; transition: all 0.1s !important; }
     div.stButton > button:active { transform: translateY(3px) !important; box-shadow: none !important; }
     div.stButton > button[kind="primary"] { background: linear-gradient(135deg, #FF6B35, #FF8C00) !important; color: white !important; }
-
-    /* TABLE BUTTONS */
-    div.stButton > button[kind="secondary"] {
-        background: linear-gradient(135deg, #43A047, #2E7D32) !important;
-        color: white !important; border: 2px solid #1B5E20 !important;
-        height: 120px !important; font-size: 24px !important; white-space: pre-wrap !important;
-    }
-    div.stButton > button[kind="primary"].table-occ {
-        background: linear-gradient(135deg, #E53935, #C62828) !important;
-        color: white !important; border: 2px solid #B71C1C !important;
-        height: 120px !important; font-size: 24px !important; white-space: pre-wrap !important;
-        animation: pulse-red 2s infinite;
-    }
+    div.stButton > button[kind="secondary"] { background: linear-gradient(135deg, #43A047, #2E7D32) !important; color: white !important; border: 2px solid #1B5E20 !important; height: 120px !important; font-size: 24px !important; white-space: pre-wrap !important; }
+    div.stButton > button[kind="primary"].table-occ { background: linear-gradient(135deg, #E53935, #C62828) !important; color: white !important; border: 2px solid #B71C1C !important; height: 120px !important; font-size: 24px !important; white-space: pre-wrap !important; animation: pulse-red 2s infinite; }
     @keyframes pulse-red { 0% {box-shadow: 0 0 0 0 rgba(229, 57, 53, 0.4);} 70% {box-shadow: 0 0 0 10px rgba(229, 57, 53, 0);} 100% {box-shadow: 0 0 0 0 rgba(229, 57, 53, 0);} }
 
-    /* CUSTOMER PORTAL */
-    .cust-card {
-        background: white; border-radius: 20px; padding: 25px;
-        box-shadow: 0 10px 30px rgba(0,0,0,0.08); text-align: center; margin-bottom: 20px; border: 1px solid #eee;
-    }
+    .cust-card { background: white; border-radius: 20px; padding: 25px; box-shadow: 0 10px 30px rgba(0,0,0,0.08); text-align: center; margin-bottom: 20px; border: 1px solid #eee; }
     .coffee-grid { display: flex; flex-wrap: wrap; justify-content: center; gap: 10px; margin-top: 20px; }
     .coffee-icon { width: 45px; opacity: 0.2; filter: grayscale(100%); transition: all 0.5s; }
     .coffee-icon.active { opacity: 1; filter: none; transform: scale(1.1); }
     
-    /* RECEIPT */
+    /* RECEIPT STYLE */
     .paper-receipt {
         background-color: #fff; width: 100%; max-width: 350px; padding: 20px; margin: 0 auto;
         box-shadow: 0 0 15px rgba(0,0,0,0.1); font-family: 'Courier Prime', monospace; font-size: 13px; color: #000; border: 1px solid #ddd;
     }
     .receipt-cut-line { border-bottom: 2px dashed #000; margin: 15px 0; }
-    .footer { position: fixed; left: 0; bottom: 0; width: 100%; background: #eee; color: #777; text-align: center; padding: 2px; font-size: 10px; z-index: 999; }
     
-    /* HIDE DIALOG ON PRINT */
+    /* --- RADICAL PRINT CSS --- */
     @media print {
-        iframe, .stApp > header, .stApp > footer { display: none; }
-        .paper-receipt { position: absolute; top: 0; left: 0; width: 100%; margin: 0; box-shadow: none; border: none; }
+        /* Hide EVERYTHING in the body */
+        body * {
+            visibility: hidden;
+        }
+        /* Make only the receipt visible */
+        .paper-receipt, .paper-receipt * {
+            visibility: visible;
+        }
+        /* Position receipt at top-left of page */
+        .paper-receipt {
+            position: fixed;
+            left: 0;
+            top: 0;
+            width: 100%;
+            margin: 0;
+            padding: 0;
+            border: none;
+            box-shadow: none;
+        }
+        /* Hide Streamlit Dialog/Modal overlays */
+        div[data-testid="stDialog"], div[role="dialog"] {
+            box-shadow: none !important;
+            background: none !important;
+        }
     }
     </style>
 """, unsafe_allow_html=True)
@@ -127,7 +128,6 @@ def ensure_schema():
         s.execute(text("CREATE TABLE IF NOT EXISTS coupon_templates (id SERIAL PRIMARY KEY, name TEXT, percent INTEGER, days_valid INTEGER, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP);"))
         try: s.execute(text("ALTER TABLE sales ADD COLUMN IF NOT EXISTS customer_card_id TEXT;"))
         except: pass
-        
         res = s.execute(text("SELECT count(*) FROM tables")).fetchone()
         if res[0] == 0:
             for i in range(1, 7): s.execute(text("INSERT INTO tables (label, is_occupied) VALUES (:l, FALSE)"), {"l": f"MASA {i}"})
@@ -181,17 +181,31 @@ def generate_custom_qr(data, center_text):
         else: newData.append((0, 100, 0, 255)) 
     img.putdata(newData)
     buf = BytesIO(); img.save(buf, format="PNG"); return buf.getvalue()
+
+# --- EMAIL ENGINE (ROBUST) ---
 def send_email(to_email, subject, body):
     if not RESEND_API_KEY: 
-        return "API_KEY_MISSING: Resend Key tapılmadı."
+        print("DEBUG: API Key Missing")
+        return "API Key Yoxdur"
+    
     url = "https://api.resend.com/emails"
     headers = {"Authorization": f"Bearer {RESEND_API_KEY}", "Content-Type": "application/json"}
     payload = {"from": f"Emalatxana <{DEFAULT_SENDER_EMAIL}>", "to": [to_email], "subject": subject, "html": body}
+    
+    print(f"DEBUG: Sending email to {to_email}...")
     try: 
-        r = requests.post(url, json=payload, headers=headers)
+        # Timeout added to prevent freezing
+        r = requests.post(url, json=payload, headers=headers, timeout=5)
+        print(f"DEBUG: Response {r.status_code} - {r.text}")
+        
         if r.status_code == 200: return "OK"
-        else: return f"API Error {r.status_code}: {r.text}"
-    except Exception as e: return f"Connection Error: {e}"
+        elif r.status_code == 403: return "Domen Təsdiqlənməyib (403)"
+        elif r.status_code == 401: return "API Key Səhvdir (401)"
+        else: return f"Xəta: {r.status_code}"
+    except Exception as e:
+        print(f"DEBUG: Exception {e}")
+        return "İnternet Xətası"
+
 def format_qty(val):
     if val % 1 == 0: return int(val)
     return val
@@ -262,7 +276,7 @@ def cleanup_old_sessions():
     try: run_action("DELETE FROM active_sessions WHERE created_at < NOW() - INTERVAL '24 hours'")
     except: pass
 
-# --- RECEIPT (SMART LAYOUT) ---
+# --- RECEIPT GENERATOR ---
 def generate_receipt_html(sale_data):
     r_store = get_setting("receipt_store_name", "EMALATXANA")
     r_addr = get_setting("receipt_address", "Bakı ş., Mərkəz")
@@ -310,15 +324,11 @@ def show_receipt_dialog():
         st.divider()
         c1, c2 = st.columns(2)
         
-        # 1. REAL JAVASCRIPT PRINT BUTTON (Works in iframes)
+        # 1. REAL JAVASCRIPT PRINT (No Python Rerun)
         with c1:
             components.html(
                 """
-                <script>
-                function printPage() {
-                    window.parent.print();
-                }
-                </script>
+                <script>function printPage() { window.parent.print(); }</script>
                 <button onclick="printPage()" style="width:100%; height:50px; background: linear-gradient(135deg, #2c3e50, #4ca1af); color:white; border:none; border-radius:10px; font-family:sans-serif; font-size:16px; font-weight:bold; cursor:pointer; box-shadow: 0 4px 0 rgba(0,0,0,0.1);">
                     🖨️ ÇAP ET (Avto)
                 </button>
@@ -326,14 +336,13 @@ def show_receipt_dialog():
                 height=70
             )
         
-        # 2. EMAIL BUTTON (With Debugging)
+        # 2. EMAIL BUTTON (Persistent Toast)
         with c2:
             if sale.get('customer_email'):
                 if st.button("📧 Emailə Göndər", type="primary", use_container_width=True):
-                    with st.spinner("Göndərilir..."):
-                        res = send_email(sale['customer_email'], f"Çek №{sale['id']} - {get_setting('receipt_store_name')}", generate_receipt_html(sale))
-                        if res == "OK": st.success("Göndərildi!")
-                        else: st.error(f"XƏTA: {res}") # Show explicit error code
+                    res = send_email(sale['customer_email'], f"Çek №{sale['id']} - {get_setting('receipt_store_name')}", generate_receipt_html(sale))
+                    if res == "OK": st.toast("✅ Email uğurla göndərildi!", icon="📧")
+                    else: st.toast(f"❌ {res}", icon="⚠️")
             else:
                 st.button("📧 Email Yoxdur", disabled=True, use_container_width=True)
 
@@ -596,7 +605,7 @@ else:
         tabs = st.tabs(["🏃‍♂️ AL-APAR", "🍽️ MASALAR", "📦 Anbar", "📜 Resept", "Analitika", "CRM", "Menyu", "⚙️ Ayarlar", "Admin", "QR"])
         with tabs[0]: render_takeaway()
         with tabs[1]: render_tables_main()
-        with tabs[2]: # Anbar (DYNAMIC TABS)
+        with tabs[2]: # Anbar
             st.subheader("📦 Anbar")
             cats = run_query("SELECT DISTINCT category FROM ingredients ORDER BY category")['category'].tolist()
             if not cats: cats = ["Ümumi"]
@@ -646,7 +655,7 @@ else:
                                 if st.form_submit_button("Yarat"):
                                     run_action("INSERT INTO ingredients (name,stock_qty,unit,category) VALUES (:n,:q,:u,:c)", {"n":n,"q":q,"u":u,"c":c}); st.rerun()
 
-        with tabs[3]: # Resept (FINAL)
+        with tabs[3]: # Resept
             st.subheader("📜 Reseptlər")
             rc1, rc2 = st.columns([1, 2])
             with rc1: 
@@ -704,7 +713,7 @@ else:
                 else: st.info("👈 Soldan məhsul seçin")
 
         with tabs[4]: render_analytics(is_admin=True)
-        with tabs[5]: # CRM (FINAL)
+        with tabs[5]: # CRM
             st.subheader("👥 CRM"); c_cp, c_mail = st.columns(2)
             with c_cp:
                 crm_tabs = st.tabs(["Kupon Yarat", "Şablonlar"])
@@ -743,7 +752,7 @@ else:
                             if e and send_email(e, sub, msg) == "OK": c+=1
                         st.success(f"{c} email getdi!")
 
-        with tabs[6]: # Menyu (BULK DELETE)
+        with tabs[6]: # Menyu
             st.subheader("📋 Menyu")
             with st.expander("📥 Excel"):
                 up = st.file_uploader("Fayl", type=['xlsx'])
@@ -763,7 +772,7 @@ else:
                     for i_n in to_del_menu: run_action("DELETE FROM menu WHERE item_name=:n", {"n":i_n})
                     st.rerun()
 
-        with tabs[7]: # Ayarlar (FINAL)
+        with tabs[7]: # Ayarlar
             st.subheader("⚙️ Ayarlar")
             c1, c2 = st.columns(2)
             with c1:
@@ -822,7 +831,7 @@ else:
                             except Exception as e: st.error(f"Xəta: {e}")
                     else: st.error("Şifrə səhvdir")
 
-        with tabs[9]: # QR (SMART ZIP)
+        with tabs[9]: # QR
             cnt = st.number_input("Say", value=1, min_value=1, key="qr_cnt"); k = st.selectbox("Növ", ["Standard", "Termos", "10%", "20%", "50%"])
             if st.button("Yarat", key="gen_qr"):
                 # ZIP Logic
