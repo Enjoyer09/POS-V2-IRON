@@ -17,10 +17,10 @@ import base64
 import json
 
 # ==========================================
-# === IRONWAVES POS - V2.7 RE-ENGINEERED ===
+# === IRONWAVES POS - V2.7 STABLE (FIXED) ===
 # ==========================================
 
-VERSION = "v2.7 RE-ENGINEERED"
+VERSION = "v2.7 STABLE (Customer Fixed)"
 
 # --- INFRA ---
 RESEND_API_KEY = os.environ.get("RESEND_API_KEY")
@@ -52,7 +52,7 @@ st.markdown("""
         box-shadow: 0 4px 12px rgba(255, 107, 53, 0.4);
     }
 
-    /* GENERAL BUTTONS */
+    /* BUTTONS */
     div.stButton > button { 
         border-radius: 12px !important; height: 60px !important; font-weight: 700 !important; 
         box-shadow: 0 4px 0 rgba(0,0,0,0.1) !important; transition: all 0.1s !important; 
@@ -66,30 +66,19 @@ st.markdown("""
         color: white !important; border: 2px solid #1B5E20 !important;
         height: 120px !important; font-size: 24px !important; white-space: pre-wrap !important;
     }
-    div.stButton > button[kind="primary"] {
-        background: linear-gradient(135deg, #E53935, #C62828) !important;
-        color: white !important; border: 2px solid #B71C1C !important;
-        height: 120px !important; font-size: 24px !important; white-space: pre-wrap !important;
-        animation: pulse-red 2s infinite;
+    /* Occupied Table (Red) */
+    .element-container button:disabled { opacity: 1 !important; } 
+    
+    /* CUSTOMER PORTAL STYLES */
+    .cust-card {
+        background: white; border-radius: 20px; padding: 25px;
+        box-shadow: 0 10px 30px rgba(0,0,0,0.08); text-align: center; margin-bottom: 20px;
+        border: 1px solid #eee;
     }
-    @keyframes pulse-red { 0% {box-shadow: 0 0 0 0 rgba(229, 57, 53, 0.4);} 70% {box-shadow: 0 0 0 10px rgba(229, 57, 53, 0);} 100% {box-shadow: 0 0 0 0 rgba(229, 57, 53, 0);} }
-
-    /* INVENTORY CARDS (NEW) */
-    .inv-btn {
-        border: 1px solid #ddd !important;
-        background: white !important;
-        color: #333 !important;
-        height: 80px !important;
-        white-space: pre-wrap !important;
-        font-size: 16px !important;
-    }
-
-    /* RECIPE TAGS */
-    .recipe-tag {
-        background: white; padding: 10px; border-radius: 8px; border: 1px solid #eee;
-        display: flex; justify-content: space-between; align-items: center; margin-bottom: 5px;
-    }
-
+    .coffee-grid { display: flex; flex-wrap: wrap; justify-content: center; gap: 10px; margin-top: 20px; }
+    .coffee-icon { width: 45px; opacity: 0.2; filter: grayscale(100%); transition: all 0.5s; }
+    .coffee-icon.active { opacity: 1; filter: none; transform: scale(1.1); }
+    
     /* RECEIPT */
     .paper-receipt {
         background-color: #fff; width: 100%; max-width: 350px; padding: 20px; margin: 0 auto;
@@ -190,7 +179,58 @@ def format_qty(val):
     if val % 1 == 0: return int(val)
     return val
 
-# --- SESSION ---
+# --- 1. MÜŞTƏRİ PORTALI (QR SCAN ENTRY POINT) ---
+# Bu hissə login yoxlanışından ƏVVƏL gəlir!
+qp = st.query_params
+if "id" in qp:
+    card_id = qp["id"]
+    # Header
+    c1, c2, c3 = st.columns([1,2,1])
+    with c2: st.markdown(f"<h2 style='text-align:center; color:#FF6B35'>☕ EMALATXANA</h2>", unsafe_allow_html=True)
+    
+    user_df = run_query("SELECT * FROM customers WHERE card_id = :id", {"id": card_id})
+    if not user_df.empty:
+        user = user_df.iloc[0]
+        
+        # Qeydiyyat
+        if not user['is_active']:
+            st.info("🎉 Xoş gəlmisiniz! Qeydiyyatı tamamlayın.")
+            with st.form("act_form"):
+                em = st.text_input("Email"); dob = st.date_input("Doğum Tarixi", min_value=datetime.date(1950,1,1))
+                if st.form_submit_button("Tamamla"):
+                    run_action("UPDATE customers SET email=:e, birth_date=:b, is_active=TRUE WHERE card_id=:i", {"e":em, "b":dob, "i":card_id})
+                    st.success("Hazırdır!"); st.rerun()
+            st.stop()
+
+        # Dashboard
+        st.markdown(f"""
+        <div class="cust-card">
+            <h4 style="margin:0; color:#888;">BALANS</h4>
+            <h1 style="color:#2E7D32; font-size: 48px; margin:0;">{user['stars']} / 10</h1>
+            <p style="color:#555;">ID: {card_id}</p>
+        </div>
+        """, unsafe_allow_html=True)
+        
+        # Grid
+        html_grid = '<div class="coffee-grid">'
+        for i in range(10):
+            icon_url = "https://cdn-icons-png.flaticon.com/512/751/751621.png"
+            cls = "coffee-icon"
+            style = ""
+            if i == 9: 
+                icon_url = "https://cdn-icons-png.flaticon.com/512/3209/3209955.png"
+                if user['stars'] >= 10: style="opacity:1; filter:none; animation: bounce 1s infinite;"
+            elif i < user['stars']: 
+                style="opacity:1; filter:none;"
+            html_grid += f'<img src="{icon_url}" class="{cls}" style="{style}">'
+        html_grid += '</div>'
+        st.markdown(html_grid, unsafe_allow_html=True)
+        
+        st.divider()
+        if st.button("Çıxış"): st.query_params.clear(); st.rerun()
+        st.stop() # POS ekranına keçməsin!
+
+# --- SESSION & LOGIN MANAGER ---
 def check_session_token():
     token = st.query_params.get("token")
     if token:
@@ -518,7 +558,7 @@ else:
             st.subheader("📦 Anbar")
             inv_tabs = st.tabs(["Bütün Mallar", "Xammal", "Təchizat"])
             
-            # --- Inventory Dialog (The logic is same, filtered by tabs) ---
+            # --- Inventory Dialog ---
             @st.dialog("Anbar Əməliyyatı")
             def manage_stock(id, name, current_qty, unit):
                 st.markdown(f"### {name}")
@@ -540,19 +580,20 @@ else:
                 p = {}
                 if filter_cat:
                     if filter_cat == "Xammal":
-                        sql += " WHERE category IN ('Bar', 'Süd', 'Sirop')" # Example mapping
+                        sql += " WHERE category IN ('Bar', 'Süd', 'Sirop')" 
                     elif filter_cat == "Təchizat":
                         sql += " WHERE category IN ('Qablaşdırma', 'Təsərrüfat')"
                 sql += " ORDER BY name"
                 df = run_query(sql, p)
                 
                 if not df.empty:
-                    cols = st.columns(4) # 4 cards per row
+                    cols = st.columns(4) 
                     for idx, r in df.iterrows():
                         with cols[idx % 4]:
-                            # Smart Card Button: Name \n Value Unit
+                            # Fix: Unique key for each button
+                            key_suffix = filter_cat if filter_cat else "main"
                             label = f"{r['name']}\n{format_qty(r['stock_qty'])} {r['unit']}"
-                            if st.button(label, key=f"inv_c_{r['id']}", use_container_width=True):
+                            if st.button(label, key=f"inv_c_{r['id']}_{key_suffix}", use_container_width=True):
                                 manage_stock(r['id'], r['name'], r['stock_qty'], r['unit'])
                 else:
                     st.info("Mal yoxdur.")
@@ -573,7 +614,7 @@ else:
             st.subheader("📜 Reseptlər")
             rc1, rc2 = st.columns([1, 2])
             
-            with rc1: # Left: Menu List
+            with rc1: 
                 search_menu = st.text_input("🔍 Axtar", key="rec_search")
                 sql = "SELECT item_name FROM menu WHERE is_active=TRUE"
                 if search_menu: sql += f" AND item_name ILIKE '%{search_menu}%'"
@@ -586,10 +627,9 @@ else:
                             st.session_state.selected_recipe_product = r['item_name']
                 else: st.caption("Tapılmadı")
 
-            with rc2: # Right: Recipe Card
+            with rc2: 
                 if st.session_state.selected_recipe_product:
                     p_name = st.session_state.selected_recipe_product
-                    # Get Price
                     p_price = run_query("SELECT price FROM menu WHERE item_name=:n", {"n":p_name}).iloc[0]['price']
                     
                     with st.container(border=True):
@@ -597,13 +637,10 @@ else:
                         st.markdown(f"**Satış Qiyməti:** {p_price} ₼")
                         st.divider()
                         
-                        # Existing Ingredients (Tags)
                         recs = run_query("SELECT id, ingredient_name, quantity_required FROM recipes WHERE menu_item_name=:n", {"n":p_name})
                         if not recs.empty:
                             for _, r in recs.iterrows():
-                                # Visual Tag Row
                                 c_tag, c_del = st.columns([4, 1])
-                                # Get Unit for display
                                 unit = run_query("SELECT unit FROM ingredients WHERE name=:n", {"n":r['ingredient_name']}).iloc[0]['unit']
                                 c_tag.markdown(f"**{r['ingredient_name']}** — {format_qty(r['quantity_required'])} {unit}")
                                 if c_del.button("🗑️", key=f"rdel_{r['id']}"):
@@ -617,7 +654,6 @@ else:
                         if not all_ings.empty:
                             c_sel, c_qty, c_btn = st.columns([2, 1, 1])
                             sel_ing = c_sel.selectbox("Xammal", all_ings['name'].tolist(), label_visibility="collapsed", key="new_r_ing")
-                            # Get selected unit
                             sel_unit = all_ings[all_ings['name']==sel_ing].iloc[0]['unit']
                             sel_qty = c_qty.number_input(f"Miqdar ({sel_unit})", min_value=0.0, step=1.0, label_visibility="collapsed", key="new_r_qty")
                             
