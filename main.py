@@ -17,10 +17,10 @@ import base64
 import json
 
 # ==========================================
-# === IRONWAVES POS - V3.0 FINAL GOLD ===
+# === IRONWAVES POS - V3.0.1 GOLD (FIXED) ===
 # ==========================================
 
-VERSION = "v3.0 FINAL GOLD"
+VERSION = "v3.0.1 GOLD (HOTFIX)"
 
 # --- INFRA ---
 RESEND_API_KEY = os.environ.get("RESEND_API_KEY")
@@ -188,39 +188,26 @@ def format_qty(val):
 
 # --- SMART DISCOUNT ENGINE (V3.0 CORE) ---
 def calculate_smart_total(cart, customer=None):
-    """
-    Kofelere endirim edir, digerlerine toxunmur.
-    Termos: 20%
-    Kupon: % (en yukseyi secir)
-    """
     total = 0.0
     discounted_total = 0.0
-    
-    # 1. Determine Discount Rate for Coffee
     coffee_discount_rate = 0.0
     
     if customer:
-        # Check Thermos
         if customer.get('type') == 'thermos':
             coffee_discount_rate = 0.20 # 20%
-        
-        # Check Coupons (Database Query)
         try:
             coupons = run_query("SELECT coupon_type FROM customer_coupons WHERE card_id=:id AND is_used=FALSE AND (expires_at IS NULL OR expires_at > NOW())", {"id": customer['card_id']})
             for _, c in coupons.iterrows():
-                # Parse: disc_20, custom_30_name
                 parts = c['coupon_type'].split('_')
                 for p in parts:
                     if p.isdigit():
                         rate = int(p) / 100.0
-                        if rate > coffee_discount_rate: coffee_discount_rate = rate # Take highest
+                        if rate > coffee_discount_rate: coffee_discount_rate = rate 
         except: pass
 
-    # 2. Apply
     for item in cart:
         line_total = item['qty'] * item['price']
         total += line_total
-        
         if item.get('is_coffee', False):
             discounted_total += line_total * (1 - coffee_discount_rate)
         else:
@@ -228,7 +215,7 @@ def calculate_smart_total(cart, customer=None):
             
     return total, discounted_total, coffee_discount_rate
 
-# --- 1. MÜŞTƏRİ PORTALI (LEGAL UPDATE) ---
+# --- 1. MÜŞTƏRİ PORTALI ---
 qp = st.query_params
 if "id" in qp:
     card_id = qp["id"]
@@ -300,7 +287,7 @@ def cleanup_old_sessions():
     try: run_action("DELETE FROM active_sessions WHERE created_at < NOW() - INTERVAL '24 hours'")
     except: pass
 
-# --- RECEIPT (ENHANCED) ---
+# --- RECEIPT ---
 def generate_receipt_html(sale_data):
     r_store = get_setting("receipt_store_name", "EMALATXANA")
     r_addr = get_setting("receipt_address", "Bakı ş., Mərkəz")
@@ -429,7 +416,6 @@ def render_takeaway():
                     if st.session_state.current_customer_ta:
                         gain = sum([x['qty'] for x in st.session_state.cart_takeaway if x.get('is_coffee')])
                         s.execute(text("UPDATE customers SET stars=stars+:s WHERE card_id=:id"), {"s":gain, "id":cust_id})
-                        # Optional: Mark One-time coupons used if implemented
                     s.commit()
                 st.session_state.last_sale = {"id": int(time.time()), "items": istr, "total": final_total, "date": get_baku_now().strftime("%Y-%m-%d %H:%M"), "cashier": st.session_state.user}
                 st.session_state.cart_takeaway=[]; st.rerun()
@@ -490,7 +476,7 @@ def render_table_order():
 
         if st.session_state.cart_table:
             for i, it in enumerate(st.session_state.cart_table):
-                sub = it['qty']*it['price']; tb+=sub
+                sub = it['qty']*it['price']; tb=0 # FIX: Just using sub for display, tb removed
                 st.markdown(f"<div style='background:white;padding:10px;margin-bottom:5px;border-radius:8px;display:flex;justify-content:space-between;align-items:center;border:1px solid #ddd;'><div style='flex:2'><b>{it['item_name']}</b></div><div style='flex:1'>{it['price']}</div><div style='flex:1;color:#E65100'>x{it['qty']}</div><div style='flex:1;text-align:right'>{sub:.1f}</div></div>", unsafe_allow_html=True)
                 b1,b2,b3=st.columns([1,1,4])
                 if b1.button("➖", key=f"m_tb_{i}"): 
