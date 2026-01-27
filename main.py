@@ -16,10 +16,10 @@ from urllib.parse import urlparse, parse_qs
 import base64
 
 # ==========================================
-# === IRONWAVES POS - V2.3 RC (GOLD) ===
+# === IRONWAVES POS - V2.3 GOLD ===
 # ==========================================
 
-VERSION = "v2.3 RC (Gold)"
+VERSION = "v2.3 GOLD"
 
 # --- INFRA ---
 RESEND_API_KEY = os.environ.get("RESEND_API_KEY")
@@ -30,15 +30,17 @@ DEFAULT_SENDER_EMAIL = "info@ironwaves.store"
 # --- CONFIG ---
 st.set_page_config(page_title=f"Ironwaves POS {VERSION}", page_icon="☕", layout="wide", initial_sidebar_state="collapsed")
 
-# --- CSS (ESTETİK DIZAYN) ---
+# --- CSS (PREMIUM DESIGN) ---
 st.markdown("""
     <style>
     @import url('https://fonts.googleapis.com/css2?family=Oswald:wght@400;500;700;900&display=swap');
+    @import url('https://fonts.googleapis.com/css2?family=Courier+Prime&display=swap'); /* Çek üçün font */
+
     .stApp { font-family: 'Oswald', sans-serif !important; background-color: #F4F6F9; }
     header {visibility: hidden;} #MainMenu {visibility: hidden;} footer {visibility: hidden;} [data-testid="stSidebar"] { display: none; }
     .block-container { padding-top: 1rem !important; padding-bottom: 2rem !important; max-width: 100% !important; }
     
-    /* TABS */
+    /* TABS (BIG & ORANGE) */
     button[data-baseweb="tab"] {
         font-family: 'Oswald', sans-serif !important; font-size: 18px !important; font-weight: 700 !important;
         background-color: white !important; border: 2px solid #FFCCBC !important; border-radius: 12px !important;
@@ -46,6 +48,7 @@ st.markdown("""
     }
     button[data-baseweb="tab"][aria-selected="true"] {
         background: linear-gradient(135deg, #FF6B35, #FF8C00) !important; border-color: #FF6B35 !important; color: white !important;
+        box-shadow: 0 4px 12px rgba(255, 107, 53, 0.4);
     }
 
     /* POS CARDS */
@@ -58,10 +61,25 @@ st.markdown("""
     div.stButton > button:active { transform: translateY(3px) !important; box-shadow: none !important; }
     div.stButton > button[kind="primary"] { background: linear-gradient(135deg, #FF6B35, #FF8C00) !important; color: white !important; }
 
-    /* STOCK CARDS */
-    .stock-card { background: white; border-radius: 12px; padding: 12px; margin-bottom: 8px; box-shadow: 0 2px 5px rgba(0,0,0,0.05); border: 1px solid #eee; display: flex; justify-content: space-between; align-items: center; }
-    .stock-card.low { border-left: 6px solid #E74C3C; background: #FFF5F5; }
-    .stock-card.ok { border-left: 6px solid #2ECC71; }
+    /* RECEIPT PREVIEW CONTAINER */
+    .receipt-container {
+        font-family: 'Courier Prime', monospace;
+        background-color: #fff;
+        padding: 20px;
+        width: 100%;
+        max-width: 350px;
+        margin: 0 auto;
+        border: 1px solid #ddd;
+        box-shadow: 0 10px 25px rgba(0,0,0,0.1);
+        text-align: center;
+        color: #000;
+    }
+    .receipt-logo { max-width: 80px; margin-bottom: 10px; }
+    .receipt-header { font-size: 18px; font-weight: bold; margin-bottom: 5px; text-transform: uppercase; }
+    .receipt-info { font-size: 12px; margin-bottom: 10px; border-bottom: 1px dashed #000; padding-bottom: 10px; }
+    .receipt-items { font-size: 14px; text-align: left; width: 100%; margin-bottom: 10px; }
+    .receipt-total { font-size: 20px; font-weight: bold; text-align: right; border-top: 1px dashed #000; border-bottom: 1px dashed #000; padding: 10px 0; margin: 10px 0; }
+    .receipt-footer { font-size: 12px; margin-top: 10px; font-style: italic; }
     
     .footer { position: fixed; left: 0; bottom: 0; width: 100%; background: #eee; color: #777; text-align: center; padding: 2px; font-size: 10px; z-index: 999; }
     </style>
@@ -89,6 +107,7 @@ def ensure_schema():
         s.execute(text("CREATE TABLE IF NOT EXISTS notifications (id SERIAL PRIMARY KEY, card_id TEXT, message TEXT, is_read BOOLEAN DEFAULT FALSE, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP);"))
         s.execute(text("CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT);"))
         s.execute(text("CREATE TABLE IF NOT EXISTS system_logs (id SERIAL PRIMARY KEY, username TEXT, action TEXT, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP);"))
+        s.execute(text("CREATE TABLE IF NOT EXISTS expenses (id SERIAL PRIMARY KEY, title TEXT, amount DECIMAL(10,2), category TEXT, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP);"))
         s.commit()
     with conn.session as s:
         try:
@@ -101,9 +120,7 @@ def ensure_schema():
 ensure_schema()
 
 # --- HELPERS ---
-def get_baku_now():
-    return datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=4))).replace(tzinfo=None)
-
+def get_baku_now(): return datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=4))).replace(tzinfo=None)
 def run_query(q, p=None): return conn.query(q, params=p, ttl=0)
 def run_action(q, p=None): 
     if p:
@@ -120,11 +137,7 @@ def verify_password(p, h):
     try: return bcrypt.checkpw(p.encode(), h.encode()) if h.startswith('$2b$') else p == h
     except: return False
 def log_system(user, action):
-    try: 
-        # Using Baku time directly in SQL isn't standard, so we insert UTC and adjust on read, OR insert explicitly
-        # Here simplified: Let DB handle timestamp or insert explicitly if needed. DB defaults to server time.
-        # We will adjust display to Baku time.
-        run_action("INSERT INTO system_logs (username, action, created_at) VALUES (:u, :a, NOW())", {"u":user, "a":action})
+    try: run_action("INSERT INTO system_logs (username, action, created_at) VALUES (:u, :a, NOW())", {"u":user, "a":action})
     except: pass
 def get_setting(key, default=""):
     try:
@@ -133,8 +146,7 @@ def get_setting(key, default=""):
     except: return default
 def set_setting(key, value):
     run_action("INSERT INTO settings (key, value) VALUES (:k, :v) ON CONFLICT (key) DO UPDATE SET value=:v", {"k":key, "v":value})
-def image_to_base64(image_file):
-    return base64.b64encode(image_file.getvalue()).decode()
+def image_to_base64(image_file): return base64.b64encode(image_file.getvalue()).decode()
 @st.cache_data
 def generate_custom_qr(data, center_text):
     qr = qrcode.QRCode(box_size=10, border=1)
@@ -157,9 +169,9 @@ def format_qty(val):
     if val % 1 == 0: return int(val)
     return val
 
-# --- FUNCTIONS MOVED TO TOP SCOPE ---
+# --- FUNCTIONS MOVED TO TOP ---
 def render_analytics(is_admin=False):
-    tabs = st.tabs(["Satışlar", "Sistem Logları"]) if is_admin else st.tabs(["Mənim Satışlarım"])
+    tabs = st.tabs(["Satışlar", "Xərclər (P&L)", "Sistem Logları"]) if is_admin else st.tabs(["Mənim Satışlarım"])
     
     with tabs[0]:
         st.markdown("### 📊 Satış Hesabatı")
@@ -178,7 +190,6 @@ def render_analytics(is_admin=False):
         sql += " ORDER BY created_at DESC"
         sales = run_query(sql, p)
         if not sales.empty:
-            # Adjust to Baku Time for Display
             sales['created_at'] = pd.to_datetime(sales['created_at']) + pd.Timedelta(hours=4)
             t = sales['total'].sum()
             st.metric("Dövriyyə", f"{t:.2f} ₼")
@@ -187,11 +198,84 @@ def render_analytics(is_admin=False):
 
     if is_admin and len(tabs) > 1:
         with tabs[1]:
-            st.markdown("### 🕵️‍♂️ Giriş/Çıxış Logları")
+            st.markdown("### 💰 Xalis Mənfəət (P&L)")
+            with st.expander("➕ Xərc Əlavə Et"):
+                with st.form("add_exp"):
+                    t=st.text_input("Təyinat"); a=st.number_input("Məbləğ",0.0); c=st.selectbox("Kat", ["İcarə","Kommunal","Maaş","Təchizat"]); 
+                    if st.form_submit_button("Əlavə Et"): run_action("INSERT INTO expenses (title,amount,category) VALUES (:t,:a,:c)",{"t":t,"a":a,"c":c}); st.rerun()
+            
+            ts = run_query("SELECT SUM(total) as t FROM sales").iloc[0]['t'] or 0
+            te = run_query("SELECT SUM(amount) as t FROM expenses").iloc[0]['t'] or 0
+            np = ts - te
+            c1,c2,c3 = st.columns(3)
+            c1.metric("Gəlir", f"{ts:.2f} ₼"); c2.metric("Xərc", f"{te:.2f} ₼"); c3.metric("Mənfəət", f"{np:.2f} ₼", delta=np)
+            st.dataframe(run_query("SELECT * FROM expenses ORDER BY created_at DESC LIMIT 50"), use_container_width=True)
+
+        with tabs[2]:
+            st.markdown("### 🕵️‍♂️ Giriş/Çıxış")
             logs = run_query("SELECT * FROM system_logs ORDER BY created_at DESC LIMIT 100")
             if not logs.empty:
                 logs['created_at'] = pd.to_datetime(logs['created_at']) + pd.Timedelta(hours=4)
                 st.dataframe(logs, use_container_width=True)
+
+# --- RECEIPT GENERATOR FUNCTION (CUSTOMIZABLE) ---
+def generate_receipt_html(sale_data):
+    # Load settings
+    r_header = get_setting("receipt_header", "EMALATXANA")
+    r_address = get_setting("receipt_address", "Bakı şəhəri")
+    r_footer = get_setting("receipt_footer", "Təşəkkürlər!")
+    r_logo_b64 = get_setting("receipt_logo_base64", "")
+    
+    # Toggles
+    s_logo = get_setting("receipt_show_logo", "True") == "True"
+    s_date = get_setting("receipt_show_date", "True") == "True"
+    s_cashier = get_setting("receipt_show_cashier", "True") == "True"
+    s_id = get_setting("receipt_show_id", "True") == "True"
+    
+    logo_html = f'<img src="data:image/png;base64,{r_logo_b64}" class="receipt-logo"><br>' if s_logo and r_logo_b64 else ''
+    
+    items_html = "<table style='width:100%; border-collapse: collapse;'>"
+    if isinstance(sale_data['items'], str): # If string from DB
+        items_list = sale_data['items'].split(', ')
+        for item in items_list:
+            # Simple parse logic: "Name xQty"
+            if " x" in item:
+                parts = item.rsplit(" x", 1)
+                name = parts[0]; qty = parts[1]
+            else: name = item; qty = "1"
+            items_html += f"<tr><td style='text-align:left;'>{name}</td><td style='text-align:right;'>x{qty}</td></tr>"
+    items_html += "</table>"
+
+    html = f"""
+    <div class="receipt-container">
+        {logo_html}
+        <div class="receipt-header">{r_header}</div>
+        <div class="receipt-info">
+            {r_address}<br>
+            {'TARİX: ' + sale_data['date'] + '<br>' if s_date else ''}
+            {'ÇEK №: ' + str(sale_data['id']) + '<br>' if s_id else ''}
+            {'KASSİR: ' + sale_data['cashier'] if s_cashier else ''}
+        </div>
+        <div class="receipt-items">
+            {items_html}
+        </div>
+        <div class="receipt-total">
+            CƏM: {sale_data['total']:.2f} ₼
+        </div>
+        <div class="receipt-footer">
+            {r_footer}<br>
+            www.ironwaves.store
+        </div>
+    </div>
+    """
+    return html
+
+@st.dialog("Çap Edin")
+def show_receipt_dialog():
+    if 'last_sale' in st.session_state and st.session_state.last_sale:
+        html = generate_receipt_html(st.session_state.last_sale)
+        st.markdown(html, unsafe_allow_html=True)
+        st.info("Çap etmək üçün: Ctrl + P")
 
 def render_pos_interface():
     c1, c2 = st.columns([1.5, 3])
@@ -288,29 +372,21 @@ def render_pos_interface():
                             st.session_state.cart.append({'item_name':it['item_name'], 'price':float(it['price']), 'qty':1, 'is_coffee':it['is_coffee']}); st.rerun()
                 i+=1
 
-# --- SESSION ---
+# --- SESSION & LOGIN ---
 if 'logged_in' not in st.session_state: st.session_state.logged_in = False
 if 'cart' not in st.session_state: st.session_state.cart = []
 if 'current_customer' not in st.session_state: st.session_state.current_customer = None
+if 'last_sale' not in st.session_state: st.session_state.last_sale = None
 
-def check_session_token():
-    token = st.query_params.get("token")
-    if token:
-        try:
-            res = run_query("SELECT username, role FROM active_sessions WHERE token=:t", {"t":token})
-            if not res.empty:
-                st.session_state.logged_in = True
-                st.session_state.user = res.iloc[0]['username']
-                st.session_state.role = res.iloc[0]['role']
-        except: pass
 check_session_token()
 
 if st.session_state.get('logged_in'):
     run_action("UPDATE users SET last_seen = NOW() WHERE username = :u", {"u": st.session_state.user})
 
-# ==========================================
-# === LOGIN SCREEN ===
-# ==========================================
+if 'last_sale' in st.session_state and st.session_state.last_sale:
+    show_receipt_dialog()
+    st.session_state.last_sale = None
+
 if not st.session_state.logged_in:
     c1, c2, c3 = st.columns([1,1,1])
     with c2:
@@ -354,39 +430,6 @@ else:
 
     role = st.session_state.role
     
-    # --- RECEIPT DIALOG ---
-    @st.dialog("Çap Edin")
-    def show_receipt():
-        if 'last_sale' in st.session_state and st.session_state.last_sale:
-            ls = st.session_state.last_sale
-            r_header = get_setting("receipt_header", "EMALATXANA")
-            r_footer = get_setting("receipt_footer", "Təşəkkürlər!")
-            r_logo = get_setting("receipt_logo_base64", "")
-            
-            logo_html = f'<div style="text-align:center;"><img src="data:image/png;base64,{r_logo}" width="100"></div>' if r_logo else ''
-            
-            html = f"""
-            <div style="width:300px; background:white; padding:20px; font-family:'Courier New', monospace; border:1px dashed #333; margin:0 auto; color:black;">
-                {logo_html}
-                <h2 style="text-align:center; margin:5px 0;">{r_header}</h2>
-                <p style="text-align:center; font-size:12px;">
-                    Tarix: {ls['date']}<br>Çek №: {ls['id']}<br>Kassir: {ls['cashier']}
-                </p>
-                <hr style="border-top: 1px dashed black;">
-                <div style="font-size:14px; text-align:left;">{ls['items'].replace(',', '<br>')}</div>
-                <hr style="border-top: 1px dashed black;">
-                <h2 style="text-align:right; margin:10px 0;">CƏM: {ls['total']:.2f} ₼</h2>
-                <hr style="border-top: 1px dashed black;">
-                <p style="text-align:center; font-size:12px; margin-top:10px;">{r_footer}</p>
-            </div>
-            """
-            st.markdown(html, unsafe_allow_html=True)
-            st.info("Printerdən (Ctrl+P) çap edin.")
-
-    if 'last_sale' in st.session_state and st.session_state.last_sale:
-        show_receipt()
-        st.session_state.last_sale = None
-
     if role == 'admin':
         tabs = st.tabs(["POS", "📦 Anbar", "📜 Resept", "Analitika", "CRM", "Menyu", "⚙️ Ayarlar", "Admin", "QR"])
         with tabs[0]: render_pos_interface()
@@ -414,7 +457,6 @@ else:
                 sql += " ORDER BY category, name"
                 df = run_query(sql, p)
                 
-                # --- INVENTORY EDIT DIALOG ---
                 @st.dialog("Stok Düzəlişi")
                 def edit_stock_dialog(item_id, name, qty):
                     st.write(f"**{name}**")
@@ -430,7 +472,6 @@ else:
                             stat = "low" if r['stock_qty'] <= r['min_limit'] else "ok"
                             icon = "⚠️" if stat == "low" else "✅"
                             qty_d = format_qty(r['stock_qty'])
-                            # CLICKABLE CARD SIMULATION VIA BUTTON
                             if st.button(f"{r['name']} ({qty_d}) {icon}", key=f"inv_{r['id']}", use_container_width=True):
                                 edit_stock_dialog(r['id'], r['name'], r['stock_qty'])
 
@@ -446,14 +487,12 @@ else:
                     st.write(f"**{p}** Tərkibi:")
                     rs = run_query("SELECT id, ingredient_name, quantity_required FROM recipes WHERE menu_item_name=:m", {"m":p})
                     
-                    # --- RECIPE EDIT LOGIC ---
                     for _, row in rs.iterrows():
                         rc1, rc2, rc3 = st.columns([3, 1, 1])
                         rc1.write(f"{row['ingredient_name']}")
                         new_q = rc2.text_input("Miqdar", value=str(row['quantity_required']), key=f"rq_{row['id']}", label_visibility="collapsed")
                         if rc3.button("Yenilə", key=f"rup_{row['id']}"):
-                            run_action("UPDATE recipes SET quantity_required=:q WHERE id=:id", {"q":float(new_q), "id":row['id']})
-                            st.success("OK"); st.rerun()
+                            run_action("UPDATE recipes SET quantity_required=:q WHERE id=:id", {"q":float(new_q), "id":row['id']}); st.success("OK"); st.rerun()
                         if rc3.button("Sil", key=f"rdel_{row['id']}"):
                             run_action("DELETE FROM recipes WHERE id=:id", {"id":row['id']}); st.rerun()
 
@@ -517,7 +556,6 @@ else:
                 if st.form_submit_button("Əlavə Et"):
                     run_action("INSERT INTO menu (item_name,price,category,is_active,is_coffee) VALUES (:n,:p,:c,TRUE,:ic)", {"n":n,"p":p,"c":c,"ic":ic}); st.rerun()
             
-            # --- MENU DELETE ---
             m_list = run_query("SELECT * FROM menu ORDER BY category, item_name")
             if not m_list.empty:
                 st.dataframe(m_list)
@@ -526,30 +564,69 @@ else:
                     run_action("DELETE FROM menu WHERE item_name=:n", {"n":del_m})
                     st.success("Silindi!"); st.rerun()
 
-        with tabs[6]: # Ayarlar
+        with tabs[6]: # Ayarlar (ULTIMATE RECEIPT DESIGNER)
             st.subheader("⚙️ Ayarlar")
-            c1, c2 = st.columns(2)
-            with c1:
-                st.markdown("**🧾 Çek Dizayneri**")
-                rh = st.text_input("Başlıq", value=get_setting("receipt_header", "EMALATXANA"))
-                rf = st.text_input("Footer", value=get_setting("receipt_footer", "Təşəkkürlər!"))
+            
+            st.markdown("#### 🧾 Çek Dizayneri (Professional)")
+            c_set, c_prev = st.columns([1, 1])
+            
+            with c_set:
+                r_head = st.text_input("Başlıq", value=get_setting("receipt_header", "EMALATXANA"))
+                r_addr = st.text_input("Ünvan", value=get_setting("receipt_address", "Bakı şəhəri"))
+                r_foot = st.text_input("Footer", value=get_setting("receipt_footer", "Təşəkkürlər!"))
                 
-                # LOGO UPLOAD
                 logo_file = st.file_uploader("Logo Yüklə (PNG/JPG)", type=['png', 'jpg', 'jpeg'])
                 if logo_file:
-                    b64_logo = image_to_base64(logo_file)
-                    if st.button("Logonu Yadda Saxla"):
-                        set_setting("receipt_logo_base64", b64_logo)
-                        st.success("Logo yükləndi!")
+                    b64 = image_to_base64(logo_file)
+                    if st.button("Logonu Yadda Saxla"): set_setting("receipt_logo_base64", b64); st.success("OK")
+
+                st.caption("Görünüş Tənzimləmələri:")
+                s_logo = st.checkbox("Logo", value=(get_setting("receipt_show_logo", "True") == "True"))
+                s_date = st.checkbox("Tarix/Saat", value=(get_setting("receipt_show_date", "True") == "True"))
+                s_cash = st.checkbox("Kassir Adı", value=(get_setting("receipt_show_cashier", "True") == "True"))
+                s_id = st.checkbox("Çek ID", value=(get_setting("receipt_show_id", "True") == "True"))
                 
-                if st.button("Mətnləri Yadda Saxla"): set_setting("receipt_header", rh); set_setting("receipt_footer", rf); st.success("Oldu!")
-            with c2:
-                st.markdown("**İşçi İdarəetməsi**")
-                with st.form("new_u"):
-                    u = st.text_input("Ad"); p = st.text_input("PIN"); r = st.selectbox("Rol", ["staff", "admin"])
-                    if st.form_submit_button("Yarat"):
-                        try: run_action("INSERT INTO users (username,password,role) VALUES (:u,:p,:r)", {"u":u,"p":hash_password(p),"r":r}); st.success("OK")
-                        except: st.error("Bu ad var")
+                if st.button("Yadda Saxla (Dizayn)"):
+                    set_setting("receipt_header", r_head); set_setting("receipt_address", r_addr); set_setting("receipt_footer", r_foot)
+                    set_setting("receipt_show_logo", str(s_logo)); set_setting("receipt_show_date", str(s_date))
+                    set_setting("receipt_show_cashier", str(s_cash)); set_setting("receipt_show_id", str(s_id))
+                    st.success("Saxlanıldı!")
+
+            with c_prev:
+                st.markdown("**Canlı Önizləmə:**")
+                # Mock Data for Preview
+                mock_logo = get_setting("receipt_logo_base64", "")
+                l_html = f'<img src="data:image/png;base64,{mock_logo}" class="receipt-logo"><br>' if s_logo and mock_logo else ''
+                
+                preview_html = f"""
+                <div class="receipt-container">
+                    {l_html}
+                    <div class="receipt-header">{r_head}</div>
+                    <div class="receipt-info">
+                        {r_addr}<br>
+                        {'TARİX: 2026-01-27 14:30<br>' if s_date else ''}
+                        {'ÇEK №: 999999<br>' if s_id else ''}
+                        {'KASSİR: Admin' if s_cash else ''}
+                    </div>
+                    <div class="receipt-items">
+                        <table style='width:100%;'>
+                        <tr><td>Latte M</td><td style='text-align:right;'>x1</td></tr>
+                        <tr><td>Su</td><td style='text-align:right;'>x1</td></tr>
+                        </table>
+                    </div>
+                    <div class="receipt-total">CƏM: 7.50 ₼</div>
+                    <div class="receipt-footer">{r_foot}<br>www.ironwaves.store</div>
+                </div>
+                """
+                st.markdown(preview_html, unsafe_allow_html=True)
+
+            st.divider()
+            st.markdown("**İşçi İdarəetməsi**")
+            with st.form("new_u"):
+                u = st.text_input("Ad"); p = st.text_input("PIN"); r = st.selectbox("Rol", ["staff", "admin"])
+                if st.form_submit_button("Yarat"):
+                    try: run_action("INSERT INTO users (username,password,role) VALUES (:u,:p,:r)", {"u":u,"p":hash_password(p),"r":r}); st.success("OK")
+                    except: st.error("Bu ad var")
 
         with tabs[7]: # Admin
             st.subheader("🔧 Admin Backup")
@@ -563,7 +640,7 @@ else:
                 except Exception as e: st.error(e)
 
         with tabs[8]: # QR
-            st.subheader("🖨️ QR Generator")
+            st.subheader("🖨️ QR Generator (Extended)")
             cnt = st.number_input("Say", 1, 50)
             k = st.selectbox("Növ", ["Standard", "Termos", "Special 10%", "Special 20%", "Special 50%"])
             if st.button("Yarat"):
