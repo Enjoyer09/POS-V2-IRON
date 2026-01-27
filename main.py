@@ -1,4 +1,5 @@
 import streamlit as st
+import streamlit.components.v1 as components  # YENİ: Print üçün vacibdir
 import pandas as pd
 import random
 import time
@@ -17,10 +18,10 @@ import base64
 import json
 
 # ==========================================
-# === IRONWAVES POS - V3.1.1 (FIXED) ===
+# === IRONWAVES POS - V3.2 PLATINUM STABLE ===
 # ==========================================
 
-VERSION = "v3.1.1 (Print & Email Fix)"
+VERSION = "v3.2 PLATINUM STABLE"
 
 # --- INFRA ---
 RESEND_API_KEY = os.environ.get("RESEND_API_KEY")
@@ -52,25 +53,13 @@ st.markdown("""
         box-shadow: 0 4px 12px rgba(255, 107, 53, 0.4);
     }
 
-    /* GENERAL BUTTONS */
+    /* BUTTONS */
     div.stButton > button { 
         border-radius: 12px !important; height: 60px !important; font-weight: 700 !important; 
         box-shadow: 0 4px 0 rgba(0,0,0,0.1) !important; transition: all 0.1s !important; 
     }
     div.stButton > button:active { transform: translateY(3px) !important; box-shadow: none !important; }
     div.stButton > button[kind="primary"] { background: linear-gradient(135deg, #FF6B35, #FF8C00) !important; color: white !important; }
-
-    /* CUSTOM PRINT BUTTON STYLE (Matches Streamlit Primary) */
-    .print-btn {
-        display: inline-flex; align-items: center; justify-content: center;
-        width: 100%; height: 60px;
-        background: linear-gradient(135deg, #2c3e50, #4ca1af); /* Blue-ish for Print */
-        color: white; border: none; border-radius: 12px;
-        font-family: 'Oswald', sans-serif; font-weight: 700; font-size: 16px;
-        cursor: pointer; box-shadow: 0 4px 0 rgba(0,0,0,0.1);
-        text-decoration: none;
-    }
-    .print-btn:active { transform: translateY(3px); box-shadow: none; }
 
     /* TABLE BUTTONS */
     div.stButton > button[kind="secondary"] {
@@ -103,12 +92,10 @@ st.markdown("""
     .receipt-cut-line { border-bottom: 2px dashed #000; margin: 15px 0; }
     .footer { position: fixed; left: 0; bottom: 0; width: 100%; background: #eee; color: #777; text-align: center; padding: 2px; font-size: 10px; z-index: 999; }
     
-    /* PRINT MEDIA QUERY */
+    /* HIDE DIALOG ON PRINT */
     @media print {
-        body * { visibility: hidden; }
-        .paper-receipt, .paper-receipt * { visibility: visible; }
-        .paper-receipt { position: absolute; left: 0; top: 0; width: 100%; margin: 0; box-shadow: none; border: none; }
-        .stDialog { display: none !important; }
+        iframe, .stApp > header, .stApp > footer { display: none; }
+        .paper-receipt { position: absolute; top: 0; left: 0; width: 100%; margin: 0; box-shadow: none; border: none; }
     }
     </style>
 """, unsafe_allow_html=True)
@@ -196,16 +183,15 @@ def generate_custom_qr(data, center_text):
     buf = BytesIO(); img.save(buf, format="PNG"); return buf.getvalue()
 def send_email(to_email, subject, body):
     if not RESEND_API_KEY: 
-        print("DEBUG: No API Key")
-        return "No API Key"
+        return "API_KEY_MISSING: Resend Key tapılmadı."
     url = "https://api.resend.com/emails"
     headers = {"Authorization": f"Bearer {RESEND_API_KEY}", "Content-Type": "application/json"}
     payload = {"from": f"Emalatxana <{DEFAULT_SENDER_EMAIL}>", "to": [to_email], "subject": subject, "html": body}
     try: 
         r = requests.post(url, json=payload, headers=headers)
         if r.status_code == 200: return "OK"
-        else: return f"Error: {r.status_code} {r.text}"
-    except Exception as e: return f"Exception: {e}"
+        else: return f"API Error {r.status_code}: {r.text}"
+    except Exception as e: return f"Connection Error: {e}"
 def format_qty(val):
     if val % 1 == 0: return int(val)
     return val
@@ -324,22 +310,30 @@ def show_receipt_dialog():
         st.divider()
         c1, c2 = st.columns(2)
         
-        # 1. REAL PRINT BUTTON (Javascript Injection)
+        # 1. REAL JAVASCRIPT PRINT BUTTON (Works in iframes)
         with c1:
-            st.markdown("""
-                <button onclick="window.print()" class="print-btn">
+            components.html(
+                """
+                <script>
+                function printPage() {
+                    window.parent.print();
+                }
+                </script>
+                <button onclick="printPage()" style="width:100%; height:50px; background: linear-gradient(135deg, #2c3e50, #4ca1af); color:white; border:none; border-radius:10px; font-family:sans-serif; font-size:16px; font-weight:bold; cursor:pointer; box-shadow: 0 4px 0 rgba(0,0,0,0.1);">
                     🖨️ ÇAP ET (Avto)
                 </button>
-            """, unsafe_allow_html=True)
+                """,
+                height=70
+            )
         
-        # 2. EMAIL BUTTON (Debugged)
+        # 2. EMAIL BUTTON (With Debugging)
         with c2:
             if sale.get('customer_email'):
                 if st.button("📧 Emailə Göndər", type="primary", use_container_width=True):
                     with st.spinner("Göndərilir..."):
                         res = send_email(sale['customer_email'], f"Çek №{sale['id']} - {get_setting('receipt_store_name')}", generate_receipt_html(sale))
                         if res == "OK": st.success("Göndərildi!")
-                        else: st.error(f"Xəta: {res}")
+                        else: st.error(f"XƏTA: {res}") # Show explicit error code
             else:
                 st.button("📧 Email Yoxdur", disabled=True, use_container_width=True)
 
@@ -353,6 +347,7 @@ def render_analytics(is_admin=False):
     if is_admin and len(tabs)>1:
         with tabs[1]:
             st.dataframe(run_query("SELECT * FROM expenses ORDER BY created_at DESC"), use_container_width=True)
+        with tabs[2]: st.markdown("### 🕵️‍♂️ Giriş/Çıxış"); logs = run_query("SELECT * FROM system_logs ORDER BY created_at DESC LIMIT 100"); st.dataframe(logs, use_container_width=True)
 
 def render_takeaway():
     c1, c2 = st.columns([1.5, 3])
@@ -601,7 +596,7 @@ else:
         tabs = st.tabs(["🏃‍♂️ AL-APAR", "🍽️ MASALAR", "📦 Anbar", "📜 Resept", "Analitika", "CRM", "Menyu", "⚙️ Ayarlar", "Admin", "QR"])
         with tabs[0]: render_takeaway()
         with tabs[1]: render_tables_main()
-        with tabs[2]: # Anbar
+        with tabs[2]: # Anbar (DYNAMIC TABS)
             st.subheader("📦 Anbar")
             cats = run_query("SELECT DISTINCT category FROM ingredients ORDER BY category")['category'].tolist()
             if not cats: cats = ["Ümumi"]
@@ -651,7 +646,7 @@ else:
                                 if st.form_submit_button("Yarat"):
                                     run_action("INSERT INTO ingredients (name,stock_qty,unit,category) VALUES (:n,:q,:u,:c)", {"n":n,"q":q,"u":u,"c":c}); st.rerun()
 
-        with tabs[3]: # Resept
+        with tabs[3]: # Resept (FINAL)
             st.subheader("📜 Reseptlər")
             rc1, rc2 = st.columns([1, 2])
             with rc1: 
@@ -709,7 +704,7 @@ else:
                 else: st.info("👈 Soldan məhsul seçin")
 
         with tabs[4]: render_analytics(is_admin=True)
-        with tabs[5]: # CRM
+        with tabs[5]: # CRM (FINAL)
             st.subheader("👥 CRM"); c_cp, c_mail = st.columns(2)
             with c_cp:
                 crm_tabs = st.tabs(["Kupon Yarat", "Şablonlar"])
@@ -748,7 +743,7 @@ else:
                             if e and send_email(e, sub, msg) == "OK": c+=1
                         st.success(f"{c} email getdi!")
 
-        with tabs[6]: # Menyu
+        with tabs[6]: # Menyu (BULK DELETE)
             st.subheader("📋 Menyu")
             with st.expander("📥 Excel"):
                 up = st.file_uploader("Fayl", type=['xlsx'])
@@ -768,7 +763,7 @@ else:
                     for i_n in to_del_menu: run_action("DELETE FROM menu WHERE item_name=:n", {"n":i_n})
                     st.rerun()
 
-        with tabs[7]: # Ayarlar
+        with tabs[7]: # Ayarlar (FINAL)
             st.subheader("⚙️ Ayarlar")
             c1, c2 = st.columns(2)
             with c1:
@@ -827,9 +822,10 @@ else:
                             except Exception as e: st.error(f"Xəta: {e}")
                     else: st.error("Şifrə səhvdir")
 
-        with tabs[9]: # QR
+        with tabs[9]: # QR (SMART ZIP)
             cnt = st.number_input("Say", value=1, min_value=1, key="qr_cnt"); k = st.selectbox("Növ", ["Standard", "Termos", "10%", "20%", "50%"])
             if st.button("Yarat", key="gen_qr"):
+                # ZIP Logic
                 zb = BytesIO()
                 with zipfile.ZipFile(zb, "w") as zf:
                     images = []
