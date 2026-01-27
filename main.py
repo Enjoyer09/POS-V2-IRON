@@ -17,10 +17,10 @@ import base64
 import json
 
 # ==========================================
-# === IRONWAVES POS - V2.6.1 STABLE (FIX) ===
+# === IRONWAVES POS - V2.6.2 STABLE ===
 # ==========================================
 
-VERSION = "v2.6.1 STABLE"
+VERSION = "v2.6.2 STABLE"
 
 # --- INFRA ---
 RESEND_API_KEY = os.environ.get("RESEND_API_KEY")
@@ -52,8 +52,11 @@ st.markdown("""
         box-shadow: 0 4px 12px rgba(255, 107, 53, 0.4);
     }
 
-    /* BUTTONS */
-    div.stButton > button { border-radius: 12px !important; height: 60px !important; font-weight: 700 !important; box-shadow: 0 4px 0 rgba(0,0,0,0.1) !important; transition: all 0.1s !important; }
+    /* GENERAL BUTTONS */
+    div.stButton > button { 
+        border-radius: 12px !important; height: 60px !important; font-weight: 700 !important; 
+        box-shadow: 0 4px 0 rgba(0,0,0,0.1) !important; transition: all 0.1s !important; 
+    }
     div.stButton > button:active { transform: translateY(3px) !important; box-shadow: none !important; }
     div.stButton > button[kind="primary"] { background: linear-gradient(135deg, #FF6B35, #FF8C00) !important; color: white !important; }
 
@@ -61,12 +64,14 @@ st.markdown("""
     div.stButton > button[kind="secondary"] {
         background: linear-gradient(135deg, #43A047, #2E7D32) !important;
         color: white !important; border: 2px solid #1B5E20 !important;
-        height: 120px !important; font-size: 24px !important; white-space: pre-wrap !important;
+        height: 120px !important; font-size: 24px !important;
+        white-space: pre-wrap !important;
     }
     div.stButton > button[kind="primary"] {
         background: linear-gradient(135deg, #E53935, #C62828) !important;
         color: white !important; border: 2px solid #B71C1C !important;
-        height: 120px !important; font-size: 24px !important; white-space: pre-wrap !important;
+        height: 120px !important; font-size: 24px !important;
+        white-space: pre-wrap !important;
         animation: pulse-red 2s infinite;
     }
     @keyframes pulse-red { 0% {box-shadow: 0 0 0 0 rgba(229, 57, 53, 0.4);} 70% {box-shadow: 0 0 0 10px rgba(229, 57, 53, 0);} 100% {box-shadow: 0 0 0 0 rgba(229, 57, 53, 0);} }
@@ -296,6 +301,7 @@ def render_takeaway():
         
         st.markdown(f"<h2 style='text-align:right; color:#E65100'>{tb:.2f} ₼</h2>", unsafe_allow_html=True)
         pm = st.radio("Metod", ["Nəğd", "Kart"], horizontal=True, key="pm_ta")
+        
         if st.button("✅ ÖDƏNİŞ ET", type="primary", use_container_width=True, key="pay_ta"):
             if not st.session_state.cart_takeaway: st.error("Boşdur!"); st.stop()
             try:
@@ -314,6 +320,7 @@ def render_takeaway():
                 st.session_state.last_sale = {"id": int(time.time()), "items": istr, "total": tb, "date": get_baku_now().strftime("%Y-%m-%d %H:%M"), "cashier": st.session_state.user}
                 st.session_state.cart_takeaway=[]; st.rerun()
             except Exception as e: st.error(str(e))
+
     with c2: render_menu_grid(st.session_state.cart_takeaway, "ta")
 
 def render_tables_main():
@@ -667,7 +674,7 @@ else:
                     else: st.error("Şifrə səhvdir")
 
         with tabs[9]: # QR
-            cnt = st.number_input("Say", 1, 50, min_value=1); k = st.selectbox("Növ", ["Standard", "Termos", "10%", "20%", "50%"])
+            cnt = st.number_input("Say", value=1, min_value=1, key="qr_cnt"); k = st.selectbox("Növ", ["Standard", "Termos", "10%", "20%", "50%"])
             if st.button("Yarat", key="gen_qr"):
                 zb = BytesIO()
                 with zipfile.ZipFile(zb, "w") as zf:
