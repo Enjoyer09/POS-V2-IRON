@@ -17,10 +17,10 @@ import base64
 import json
 
 # ==========================================
-# === IRONWAVES POS - V3.1 PLATINUM ===
+# === IRONWAVES POS - V3.1.1 (FIXED) ===
 # ==========================================
 
-VERSION = "v3.1 PLATINUM"
+VERSION = "v3.1.1 (Print & Email Fix)"
 
 # --- INFRA ---
 RESEND_API_KEY = os.environ.get("RESEND_API_KEY")
@@ -52,13 +52,25 @@ st.markdown("""
         box-shadow: 0 4px 12px rgba(255, 107, 53, 0.4);
     }
 
-    /* BUTTONS */
+    /* GENERAL BUTTONS */
     div.stButton > button { 
         border-radius: 12px !important; height: 60px !important; font-weight: 700 !important; 
         box-shadow: 0 4px 0 rgba(0,0,0,0.1) !important; transition: all 0.1s !important; 
     }
     div.stButton > button:active { transform: translateY(3px) !important; box-shadow: none !important; }
     div.stButton > button[kind="primary"] { background: linear-gradient(135deg, #FF6B35, #FF8C00) !important; color: white !important; }
+
+    /* CUSTOM PRINT BUTTON STYLE (Matches Streamlit Primary) */
+    .print-btn {
+        display: inline-flex; align-items: center; justify-content: center;
+        width: 100%; height: 60px;
+        background: linear-gradient(135deg, #2c3e50, #4ca1af); /* Blue-ish for Print */
+        color: white; border: none; border-radius: 12px;
+        font-family: 'Oswald', sans-serif; font-weight: 700; font-size: 16px;
+        cursor: pointer; box-shadow: 0 4px 0 rgba(0,0,0,0.1);
+        text-decoration: none;
+    }
+    .print-btn:active { transform: translateY(3px); box-shadow: none; }
 
     /* TABLE BUTTONS */
     div.stButton > button[kind="secondary"] {
@@ -90,6 +102,14 @@ st.markdown("""
     }
     .receipt-cut-line { border-bottom: 2px dashed #000; margin: 15px 0; }
     .footer { position: fixed; left: 0; bottom: 0; width: 100%; background: #eee; color: #777; text-align: center; padding: 2px; font-size: 10px; z-index: 999; }
+    
+    /* PRINT MEDIA QUERY */
+    @media print {
+        body * { visibility: hidden; }
+        .paper-receipt, .paper-receipt * { visibility: visible; }
+        .paper-receipt { position: absolute; left: 0; top: 0; width: 100%; margin: 0; box-shadow: none; border: none; }
+        .stDialog { display: none !important; }
+    }
     </style>
 """, unsafe_allow_html=True)
 
@@ -121,7 +141,6 @@ def ensure_schema():
         try: s.execute(text("ALTER TABLE sales ADD COLUMN IF NOT EXISTS customer_card_id TEXT;"))
         except: pass
         
-        # Init Tables
         res = s.execute(text("SELECT count(*) FROM tables")).fetchone()
         if res[0] == 0:
             for i in range(1, 7): s.execute(text("INSERT INTO tables (label, is_occupied) VALUES (:l, FALSE)"), {"l": f"MASA {i}"})
@@ -176,25 +195,26 @@ def generate_custom_qr(data, center_text):
     img.putdata(newData)
     buf = BytesIO(); img.save(buf, format="PNG"); return buf.getvalue()
 def send_email(to_email, subject, body):
-    if not RESEND_API_KEY: return False
+    if not RESEND_API_KEY: 
+        print("DEBUG: No API Key")
+        return "No API Key"
     url = "https://api.resend.com/emails"
     headers = {"Authorization": f"Bearer {RESEND_API_KEY}", "Content-Type": "application/json"}
     payload = {"from": f"Emalatxana <{DEFAULT_SENDER_EMAIL}>", "to": [to_email], "subject": subject, "html": body}
-    try: requests.post(url, json=payload, headers=headers); return True
-    except: return False
+    try: 
+        r = requests.post(url, json=payload, headers=headers)
+        if r.status_code == 200: return "OK"
+        else: return f"Error: {r.status_code} {r.text}"
+    except Exception as e: return f"Exception: {e}"
 def format_qty(val):
     if val % 1 == 0: return int(val)
     return val
 
-# --- SMART DISCOUNT ENGINE (V3.0 CORE) ---
+# --- SMART DISCOUNT ENGINE ---
 def calculate_smart_total(cart, customer=None):
-    total = 0.0
-    discounted_total = 0.0
-    coffee_discount_rate = 0.0
-    
+    total = 0.0; discounted_total = 0.0; coffee_discount_rate = 0.0
     if customer:
-        if customer.get('type') == 'thermos':
-            coffee_discount_rate = 0.20 # 20%
+        if customer.get('type') == 'thermos': coffee_discount_rate = 0.20
         try:
             coupons = run_query("SELECT coupon_type FROM customer_coupons WHERE card_id=:id AND is_used=FALSE AND (expires_at IS NULL OR expires_at > NOW())", {"id": customer['card_id']})
             for _, c in coupons.iterrows():
@@ -204,15 +224,10 @@ def calculate_smart_total(cart, customer=None):
                         rate = int(p) / 100.0
                         if rate > coffee_discount_rate: coffee_discount_rate = rate 
         except: pass
-
     for item in cart:
-        line_total = item['qty'] * item['price']
-        total += line_total
-        if item.get('is_coffee', False):
-            discounted_total += line_total * (1 - coffee_discount_rate)
-        else:
-            discounted_total += line_total
-            
+        line_total = item['qty'] * item['price']; total += line_total
+        if item.get('is_coffee', False): discounted_total += line_total * (1 - coffee_discount_rate)
+        else: discounted_total += line_total
     return total, discounted_total, coffee_discount_rate
 
 # --- 1. MÜŞTƏRİ PORTALI ---
@@ -221,7 +236,6 @@ if "id" in qp:
     card_id = qp["id"]
     c1, c2, c3 = st.columns([1,2,1])
     with c2: st.markdown(f"<h2 style='text-align:center; color:#FF6B35'>☕ EMALATXANA</h2>", unsafe_allow_html=True)
-    
     user_df = run_query("SELECT * FROM customers WHERE card_id = :id", {"id": card_id})
     if not user_df.empty:
         user = user_df.iloc[0]
@@ -233,22 +247,9 @@ if "id" in qp:
                 with st.expander("Qaydaları Oxumaq üçün Toxunun"):
                     st.markdown("""
                     **İSTİFADƏÇİ RAZILAŞMASI VƏ MƏXFİLİK SİYASƏTİ**
-
-                    **1. Ümumi Müddəalar**
-                    Bu loyallıq proqramı "Ironwaves POS" sistemi vasitəsilə idarə olunur. Qeydiyyatdan keçməklə siz aşağıdakı şərtləri qəbul etmiş olursunuz.
-
-                    **2. Bonuslar, Hədiyyələr və Endirim Siyasəti**
-                    2.1. Toplanılan ulduzlar və bonuslar heç bir halda nağd pula çevrilə, başqa hesaba köçürülə və ya qaytarıla bilməz.
-                    2.2. **Şəxsiyyətin Təsdiqi:** Ad günü və ya xüsusi kampaniya hədiyyələrinin təqdim edilməsi zamanı, sui-istifadə hallarınin qarşısını almaq və təvəllüdü dəqiqləşdirmək məqsədilə, şirkət əməkdaşı müştəridən şəxsiyyət vəsiqəsini təqdim etməsini tələb etmək hüququna malikdir. Sənəd təqdim edilmədikdə hədiyyə verilməyə bilər.
-                    2.3. **Endirimlərin Tətbiq Sahəsi:** Nəzərinizə çatdırırıq ki, "Ironwaves" loyallıq proqramı çərçivəsində təqdim olunan bütün növ imtiyazlar (o cümlədən "Ekoloji Termos" endirimi, xüsusi promo-kodlar və faizli endirim kartları) **müstəsna olaraq kofe və kofe əsaslı içkilərə şamil edilir.** Şirniyyatlar, qablaşdırılmış qida məhsulları və digər soyuq içkilər endirim siyasətindən xaricdir. Sizin kofe həzzinizi daha əlçatan etmək üçün çalışırıq!
-
-                    **3. Dəyişikliklər və İmtina Hüququ**
-                    3.1. Şirkət, bu razılaşmanın şərtlərini dəyişdirmək hüququnu özündə saxlayır.
-                    3.2. **Bildiriş:** Şərtlərdə əsaslı dəyişikliklər edildiyi təqdirdə, qeydiyyatlı e-poçt ünvanınıza bildiriş göndəriləcək.
-                    3.3. **İmtina:** Əgər yeni şərtlərlə razılaşmırsınızsa, sistemdən qeydiyyatınızın və fərdi məlumatlarınızın silinməsini tələb etmək hüququnuz var.
-
-                    **4. Məxfilik**
-                    4.1. Sizin məlumatlarınız (Email, Doğum tarixi) üçüncü tərəflərlə paylaşılmır və yalnız xidmət keyfiyyətinin artırılması üçün istifadə olunur.
+                    **1. Ümumi Müddəalar:** Bu loyallıq proqramı "Ironwaves POS" sistemi vasitəsilə idarə olunur.
+                    **2. Bonuslar:** 2.1. Toplanılan ulduzlar nağd pula çevrilmir. 2.2. **Şəxsiyyət:** Hədiyyə üçün sənəd tələb oluna bilər. 2.3. **Endirimlər:** Yalnız kofe və kofe əsaslı içkilərə şamil edilir.
+                    **3. Məxfilik:** Məlumatlarınız (Email) 3-cü tərəflə paylaşılmır.
                     """)
                 agree = st.checkbox("Şərtləri qəbul edirəm")
                 if st.form_submit_button("Tamamla"):
@@ -257,19 +258,7 @@ if "id" in qp:
                         st.success("Hazırdır!"); st.rerun()
                     else: st.error("Qaydaları qəbul etməlisiniz.")
             st.stop()
-
         st.markdown(f"<div class='cust-card'><h4 style='margin:0; color:#888;'>BALANS</h4><h1 style='color:#2E7D32; font-size: 48px; margin:0;'>{user['stars']} / 10</h1><p style='color:#555;'>ID: {card_id}</p></div>", unsafe_allow_html=True)
-        html_grid = '<div class="coffee-grid">'
-        for i in range(10):
-            icon_url = "https://cdn-icons-png.flaticon.com/512/751/751621.png"
-            cls = "coffee-icon"; style = ""
-            if i == 9: 
-                icon_url = "https://cdn-icons-png.flaticon.com/512/3209/3209955.png"
-                if user['stars'] >= 10: style="opacity:1; filter:none; animation: bounce 1s infinite;"
-            elif i < user['stars']: style="opacity:1; filter:none;"
-            html_grid += f'<img src="{icon_url}" class="{cls}" style="{style}">'
-        html_grid += '</div>'
-        st.markdown(html_grid, unsafe_allow_html=True)
         st.divider()
         if st.button("Çıxış"): st.query_params.clear(); st.rerun()
         st.stop()
@@ -292,13 +281,11 @@ def generate_receipt_html(sale_data):
     r_store = get_setting("receipt_store_name", "EMALATXANA")
     r_addr = get_setting("receipt_address", "Bakı ş., Mərkəz")
     r_phone = get_setting("receipt_phone", "+994 50 000 00 00")
-    r_web = get_setting("receipt_web", "")
-    r_insta = get_setting("receipt_insta", "")
-    r_email = get_setting("receipt_email", "")
+    r_web = get_setting("receipt_web", ""); r_insta = get_setting("receipt_insta", ""); r_email = get_setting("receipt_email", "")
     r_footer = get_setting("receipt_footer", "Bizi seçdiyiniz üçün təşəkkürlər!")
     r_logo_b64 = get_setting("receipt_logo_base64", "")
-    
     logo_html = f'<div style="text-align:center;"><img src="data:image/png;base64,{r_logo_b64}" style="max-width:80px;"></div><br>' if r_logo_b64 else ''
+    
     items_html = "<table style='width:100%; border-collapse: collapse; font-size:13px;'>"
     if isinstance(sale_data['items'], str):
         clean_items_str = sale_data['items']
@@ -308,36 +295,24 @@ def generate_receipt_html(sale_data):
             else: name = item; qty = "1"
             items_html += f"<tr><td style='text-align:left;'>{name}</td><td style='text-align:right;'>x{qty}</td></tr>"
     items_html += "</table>"
-    header_extra = ""
-    if sale_data['items'].startswith("["): header_extra = f"<div style='text-align:center; font-weight:bold; margin:5px 0;'>{sale_data['items'].split(']')[0][1:]}</div>"
     
-    # Financials (Smart Layout)
     financial_html = ""
-    subtotal = sale_data.get('subtotal', sale_data['total'])
-    discount = sale_data.get('discount', 0)
-    
+    subtotal = sale_data.get('subtotal', sale_data['total']); discount = sale_data.get('discount', 0)
     financial_html += f"<div style='display:flex; justify-content:space-between; margin-top:5px;'><span>Ara Cəm:</span><span>{subtotal:.2f} ₼</span></div>"
-    if discount > 0:
-        financial_html += f"<div style='display:flex; justify-content:space-between; color:red; font-weight:bold;'><span>Endirim:</span><span>-{discount:.2f} ₼</span></div>"
+    if discount > 0: financial_html += f"<div style='display:flex; justify-content:space-between; color:red; font-weight:bold;'><span>Endirim:</span><span>-{discount:.2f} ₼</span></div>"
     financial_html += f"<div style='display:flex; justify-content:space-between; font-weight:bold; font-size:18px; margin-top:5px; border-top:1px solid black; padding-top:5px;'><span>YEKUN:</span><span>{sale_data['total']:.2f} ₼</span></div>"
-
-    extra_contacts = ""
-    if r_web: extra_contacts += f"🌐 {r_web}<br>"
-    if r_insta: extra_contacts += f"📸 {r_insta}<br>"
-    if r_email: extra_contacts += f"📧 {r_email}<br>"
-
+    
+    extra = ""
+    if r_web: extra += f"🌐 {r_web}<br>"
+    if r_insta: extra += f"📸 {r_insta}<br>"
     return f"""
     <div class="paper-receipt">
         {logo_html}<div style="text-align:center; font-weight:bold; font-size:18px;">{r_store}</div>
-        <div style="text-align:center; font-size:12px; margin-bottom:5px;">{r_addr}</div>
-        <div style="text-align:center; font-size:12px;">📞 {r_phone}</div>
+        <div style="text-align:center; font-size:12px;">{r_addr}</div><div style="text-align:center; font-size:12px;">📞 {r_phone}</div>
         <div class="receipt-cut-line"></div>
         <div style="font-size:12px;">TARİX: {sale_data['date']}<br>ÇEK №: {sale_data['id']}<br>KASSİR: {sale_data['cashier']}</div>
-        {header_extra}<div class="receipt-cut-line"></div>{items_html}<div class="receipt-cut-line"></div>
-        {financial_html}
-        <div class="receipt-cut-line"></div>
-        <div style="text-align:center; font-size:11px;">{extra_contacts}</div>
-        <div style="text-align:center; font-size:12px; font-style:italic; margin-top:5px;">{r_footer}</div>
+        <div class="receipt-cut-line"></div>{items_html}<div class="receipt-cut-line"></div>{financial_html}<div class="receipt-cut-line"></div>
+        <div style="text-align:center; font-size:11px;">{extra}</div><div style="text-align:center; font-size:12px; margin-top:5px;">{r_footer}</div>
     </div>
     """
 
@@ -345,51 +320,39 @@ def generate_receipt_html(sale_data):
 def show_receipt_dialog():
     if 'last_sale' in st.session_state and st.session_state.last_sale:
         sale = st.session_state.last_sale
-        receipt_html = generate_receipt_html(sale)
-        st.markdown(receipt_html, unsafe_allow_html=True)
-        
+        st.markdown(generate_receipt_html(sale), unsafe_allow_html=True)
         st.divider()
-        c_print, c_email = st.columns(2)
-        c_print.info("🖨️ Çap etmək üçün: **Ctrl + P**")
+        c1, c2 = st.columns(2)
         
-        if sale.get('customer_email'):
-            if c_email.button("📧 Emailə Göndər", type="primary", use_container_width=True):
-                if send_email(sale['customer_email'], f"Sizin Çekiniz (№{sale['id']}) - {get_setting('receipt_store_name', 'EMALATXANA')}", receipt_html):
-                    st.toast("✅ Email uğurla göndərildi!")
-                else:
-                    st.toast("❌ Göndərmək mümkün olmadı (API Error)")
-        else:
-            c_email.button("📧 Email (Yoxdur)", disabled=True, use_container_width=True)
+        # 1. REAL PRINT BUTTON (Javascript Injection)
+        with c1:
+            st.markdown("""
+                <button onclick="window.print()" class="print-btn">
+                    🖨️ ÇAP ET (Avto)
+                </button>
+            """, unsafe_allow_html=True)
+        
+        # 2. EMAIL BUTTON (Debugged)
+        with c2:
+            if sale.get('customer_email'):
+                if st.button("📧 Emailə Göndər", type="primary", use_container_width=True):
+                    with st.spinner("Göndərilir..."):
+                        res = send_email(sale['customer_email'], f"Çek №{sale['id']} - {get_setting('receipt_store_name')}", generate_receipt_html(sale))
+                        if res == "OK": st.success("Göndərildi!")
+                        else: st.error(f"Xəta: {res}")
+            else:
+                st.button("📧 Email Yoxdur", disabled=True, use_container_width=True)
 
 # --- RENDERERS ---
 def render_analytics(is_admin=False):
-    tabs = st.tabs(["Satışlar", "Xərclər (P&L)", "Sistem Logları"]) if is_admin else st.tabs(["Mənim Satışlarım"])
+    tabs = st.tabs(["Satışlar", "Xərclər", "Loglar"])
     with tabs[0]:
-        st.markdown("### 📊 Satış Hesabatı")
-        f_mode = st.radio("Vaxt", ["Günlük", "Aylıq"], horizontal=True, key=f"am_{is_admin}")
-        sql = "SELECT id, created_at, items, total, payment_method, cashier, customer_card_id FROM sales"; p = {}
-        if not is_admin: sql += " WHERE cashier = :u"; p['u'] = st.session_state.user
-        else: sql += " WHERE 1=1" 
-        if f_mode == "Günlük": d = st.date_input("Gün", datetime.date.today(), key=f"d_{is_admin}"); sql += " AND DATE(created_at AT TIME ZONE 'Asia/Baku') = :d"; p['d'] = d
-        else: d = st.date_input("Ay", datetime.date.today(), key=f"m_{is_admin}"); sql += " AND TO_CHAR(created_at AT TIME ZONE 'Asia/Baku', 'YYYY-MM') = :m"; p['m'] = d.strftime("%Y-%m")
-        sql += " ORDER BY created_at DESC"; sales = run_query(sql, p)
-        if not sales.empty:
-            sales['created_at'] = pd.to_datetime(sales['created_at']) + pd.Timedelta(hours=4); t = sales['total'].sum()
-            st.metric("Dövriyyə", f"{t:.2f} ₼")
-            sales_display = sales.rename(columns={"customer_card_id": "Müştəri Kartı", "items": "Məhsullar", "total": "Cəm", "payment_method": "Ödəniş", "cashier": "Kassir"})
-            st.dataframe(sales_display[['id', 'created_at', 'Məhsullar', 'Cəm', 'Ödəniş', 'Kassir', 'Müştəri Kartı']], hide_index=True, use_container_width=True)
-        else: st.info("Satış yoxdur")
-    if is_admin and len(tabs) > 1:
+        sql = "SELECT id, created_at, items, total, payment_method, cashier, customer_card_id FROM sales ORDER BY created_at DESC"
+        sales = run_query(sql)
+        st.dataframe(sales, hide_index=True, use_container_width=True)
+    if is_admin and len(tabs)>1:
         with tabs[1]:
-            st.markdown("### 💰 Xalis Mənfəət (P&L)")
-            with st.expander("➕ Xərc Əlavə Et"):
-                with st.form("add_exp"):
-                    t=st.text_input("Təyinat"); a=st.number_input("Məbləğ (AZN)", min_value=0.0); c=st.selectbox("Kat", ["İcarə","Kommunal","Maaş","Təchizat"]); 
-                    if st.form_submit_button("Əlavə Et"): run_action("INSERT INTO expenses (title,amount,category,created_at) VALUES (:t,:a,:c,:time)",{"t":t,"a":a,"c":c, "time":get_baku_now()}); st.rerun()
-            ts = run_query("SELECT SUM(total) as t FROM sales").iloc[0]['t'] or 0; te = run_query("SELECT SUM(amount) as t FROM expenses").iloc[0]['t'] or 0; np = ts - te
-            c1,c2,c3 = st.columns(3); c1.metric("Gəlir", f"{ts:.2f} ₼"); c2.metric("Xərc", f"{te:.2f} ₼"); c3.metric("Mənfəət", f"{np:.2f} ₼", delta=np)
-            st.dataframe(run_query("SELECT * FROM expenses ORDER BY created_at DESC LIMIT 50"), use_container_width=True)
-        with tabs[2]: st.markdown("### 🕵️‍♂️ Giriş/Çıxış"); logs = run_query("SELECT * FROM system_logs ORDER BY created_at DESC LIMIT 100"); st.dataframe(logs, use_container_width=True)
+            st.dataframe(run_query("SELECT * FROM expenses ORDER BY created_at DESC"), use_container_width=True)
 
 def render_takeaway():
     c1, c2 = st.columns([1.5, 3])
@@ -413,8 +376,7 @@ def render_takeaway():
         
         if st.session_state.cart_takeaway:
             for i, it in enumerate(st.session_state.cart_takeaway):
-                sub = it['qty']*it['price']; 
-                st.markdown(f"<div style='background:white;padding:10px;margin-bottom:5px;border-radius:8px;display:flex;justify-content:space-between;align-items:center;border:1px solid #ddd;'><div style='flex:2'><b>{it['item_name']}</b></div><div style='flex:1'>{it['price']}</div><div style='flex:1;color:#E65100'>x{it['qty']}</div><div style='flex:1;text-align:right'>{sub:.1f}</div></div>", unsafe_allow_html=True)
+                st.markdown(f"<div style='background:white;padding:10px;margin-bottom:5px;border-radius:8px;display:flex;justify-content:space-between;align-items:center;border:1px solid #ddd;'><div style='flex:2'><b>{it['item_name']}</b></div><div style='flex:1'>{it['price']}</div><div style='flex:1;color:#E65100'>x{it['qty']}</div><div style='flex:1;text-align:right'>{it['qty']*it['price']:.1f}</div></div>", unsafe_allow_html=True)
                 b1,b2,b3=st.columns([1,1,4])
                 if b1.button("➖", key=f"m_ta_{i}"): 
                     if it['qty']>1: it['qty']-=1 
@@ -445,14 +407,8 @@ def render_takeaway():
                         s.execute(text("UPDATE customers SET stars=stars+:s WHERE card_id=:id"), {"s":gain, "id":cust_id})
                     s.commit()
                 st.session_state.last_sale = {
-                    "id": int(time.time()), 
-                    "items": istr, 
-                    "total": final_total, 
-                    "subtotal": raw_total,
-                    "discount": raw_total - final_total,
-                    "date": get_baku_now().strftime("%Y-%m-%d %H:%M"), 
-                    "cashier": st.session_state.user,
-                    "customer_email": cust_email
+                    "id": int(time.time()), "items": istr, "total": final_total, "subtotal": raw_total, "discount": raw_total - final_total,
+                    "date": get_baku_now().strftime("%Y-%m-%d %H:%M"), "cashier": st.session_state.user, "customer_email": cust_email
                 }
                 st.session_state.cart_takeaway=[]; st.rerun()
             except Exception as e: st.error(str(e))
@@ -478,14 +434,9 @@ def render_table_grid():
     cols = st.columns(3)
     for idx, row in tables.iterrows():
         with cols[idx % 3]:
-            is_occ = row['is_occupied']
-            label = f"{row['label']}\n\n{row['total']} ₼" if is_occ else f"{row['label']}\n\n(BOŞ)"
-            kind = "primary" if is_occ else "secondary"
-            cls = "table-occ" if is_occ else ""
+            is_occ = row['is_occupied']; label = f"{row['label']}\n\n{row['total']} ₼" if is_occ else f"{row['label']}\n\n(BOŞ)"; kind = "primary" if is_occ else "secondary"; cls = "table-occ" if is_occ else ""
             if st.button(label, key=f"tbl_btn_{row['id']}", type=kind, use_container_width=True):
-                st.session_state.selected_table = row.to_dict()
-                st.session_state.cart_table = json.loads(row['items']) if is_occ and row['items'] else []
-                st.rerun()
+                st.session_state.selected_table = row.to_dict(); st.session_state.cart_table = json.loads(row['items']) if is_occ and row['items'] else []; st.rerun()
 
 def render_table_order():
     tbl = st.session_state.selected_table
@@ -512,8 +463,7 @@ def render_table_order():
 
         if st.session_state.cart_table:
             for i, it in enumerate(st.session_state.cart_table):
-                sub = it['qty']*it['price']; tb=0 # Fixed variable
-                st.markdown(f"<div style='background:white;padding:10px;margin-bottom:5px;border-radius:8px;display:flex;justify-content:space-between;align-items:center;border:1px solid #ddd;'><div style='flex:2'><b>{it['item_name']}</b></div><div style='flex:1'>{it['price']}</div><div style='flex:1;color:#E65100'>x{it['qty']}</div><div style='flex:1;text-align:right'>{sub:.1f}</div></div>", unsafe_allow_html=True)
+                st.markdown(f"<div style='background:white;padding:10px;margin-bottom:5px;border-radius:8px;display:flex;justify-content:space-between;align-items:center;border:1px solid #ddd;'><div style='flex:2'><b>{it['item_name']}</b></div><div style='flex:1'>{it['price']}</div><div style='flex:1;color:#E65100'>x{it['qty']}</div><div style='flex:1;text-align:right'>{it['qty']*it['price']:.1f}</div></div>", unsafe_allow_html=True)
                 b1,b2,b3=st.columns([1,1,4])
                 if b1.button("➖", key=f"m_tb_{i}"): 
                     if it['qty']>1: it['qty']-=1 
@@ -537,7 +487,6 @@ def render_table_order():
                 istr = f"[{tbl['label']}] " + raw_items
                 cust_id = st.session_state.current_customer_tb['card_id'] if st.session_state.current_customer_tb else None
                 cust_email = st.session_state.current_customer_tb.get('email') if st.session_state.current_customer_tb else None
-                
                 run_action("INSERT INTO sales (items, total, payment_method, cashier, created_at, customer_card_id) VALUES (:i,:t,:p,:c,:time, :cid)", 
                            {"i":istr,"t":final_total,"p":("Cash" if pm=="Nəğd" else "Card"),"c":st.session_state.user, "time":get_baku_now(), "cid":cust_id})
                 with conn.session as s:
@@ -550,14 +499,8 @@ def render_table_order():
                     s.commit()
                 run_action("UPDATE tables SET is_occupied=FALSE, items=NULL, total=0 WHERE id=:id", {"id":tbl['id']})
                 st.session_state.last_sale = {
-                    "id": int(time.time()), 
-                    "items": istr, 
-                    "total": final_total, 
-                    "subtotal": raw_total,
-                    "discount": raw_total - final_total,
-                    "date": get_baku_now().strftime("%Y-%m-%d %H:%M"), 
-                    "cashier": st.session_state.user,
-                    "customer_email": cust_email
+                    "id": int(time.time()), "items": istr, "total": final_total, "subtotal": raw_total, "discount": raw_total - final_total,
+                    "date": get_baku_now().strftime("%Y-%m-%d %H:%M"), "cashier": st.session_state.user, "customer_email": cust_email
                 }
                 st.session_state.cart_table=[]; st.session_state.selected_table=None; st.rerun()
             except Exception as e: st.error(str(e))
@@ -802,7 +745,7 @@ else:
                     if st.form_submit_button("Seçilənlərə Göndər"):
                         c = 0
                         for e in selected_emails: 
-                            if e and send_email(e, sub, msg): c+=1
+                            if e and send_email(e, sub, msg) == "OK": c+=1
                         st.success(f"{c} email getdi!")
 
         with tabs[6]: # Menyu
