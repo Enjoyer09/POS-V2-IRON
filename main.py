@@ -17,10 +17,10 @@ import base64
 import json
 
 # ==========================================
-# === IRONWAVES POS - V2.6 FINAL SECURE ===
+# === IRONWAVES POS - V2.6.1 STABLE (FIX) ===
 # ==========================================
 
-VERSION = "v2.6 FINAL SECURE"
+VERSION = "v2.6.1 STABLE"
 
 # --- INFRA ---
 RESEND_API_KEY = os.environ.get("RESEND_API_KEY")
@@ -52,11 +52,8 @@ st.markdown("""
         box-shadow: 0 4px 12px rgba(255, 107, 53, 0.4);
     }
 
-    /* GENERAL BUTTONS */
-    div.stButton > button { 
-        border-radius: 12px !important; height: 60px !important; font-weight: 700 !important; 
-        box-shadow: 0 4px 0 rgba(0,0,0,0.1) !important; transition: all 0.1s !important; 
-    }
+    /* BUTTONS */
+    div.stButton > button { border-radius: 12px !important; height: 60px !important; font-weight: 700 !important; box-shadow: 0 4px 0 rgba(0,0,0,0.1) !important; transition: all 0.1s !important; }
     div.stButton > button:active { transform: translateY(3px) !important; box-shadow: none !important; }
     div.stButton > button[kind="primary"] { background: linear-gradient(135deg, #FF6B35, #FF8C00) !important; color: white !important; }
 
@@ -64,14 +61,12 @@ st.markdown("""
     div.stButton > button[kind="secondary"] {
         background: linear-gradient(135deg, #43A047, #2E7D32) !important;
         color: white !important; border: 2px solid #1B5E20 !important;
-        height: 120px !important; font-size: 24px !important;
-        white-space: pre-wrap !important;
+        height: 120px !important; font-size: 24px !important; white-space: pre-wrap !important;
     }
     div.stButton > button[kind="primary"] {
         background: linear-gradient(135deg, #E53935, #C62828) !important;
         color: white !important; border: 2px solid #B71C1C !important;
-        height: 120px !important; font-size: 24px !important;
-        white-space: pre-wrap !important;
+        height: 120px !important; font-size: 24px !important; white-space: pre-wrap !important;
         animation: pulse-red 2s infinite;
     }
     @keyframes pulse-red { 0% {box-shadow: 0 0 0 0 rgba(229, 57, 53, 0.4);} 70% {box-shadow: 0 0 0 10px rgba(229, 57, 53, 0);} 100% {box-shadow: 0 0 0 0 rgba(229, 57, 53, 0);} }
@@ -149,7 +144,6 @@ def verify_password(p, h):
     try: return bcrypt.checkpw(p.encode(), h.encode()) if h.startswith('$2b$') else p == h
     except: return False
 def log_system(user, action):
-    # Log time in Baku Time for consistency
     try: run_action("INSERT INTO system_logs (username, action, created_at) VALUES (:u, :a, :t)", {"u":user, "a":action, "t":get_baku_now()})
     except: pass
 def get_setting(key, default=""):
@@ -182,24 +176,20 @@ def format_qty(val):
     if val % 1 == 0: return int(val)
     return val
 
-# --- SECURE SESSION MANAGER ---
+# --- SESSION ---
 def check_session_token():
-    # 1. URL-dən tokeni al
     token = st.query_params.get("token")
     if token:
         try:
-            # 2. Bazadan yoxla
             res = run_query("SELECT username, role FROM active_sessions WHERE token=:t", {"t":token})
             if not res.empty:
                 st.session_state.logged_in = True
                 st.session_state.user = res.iloc[0]['username']
                 st.session_state.role = res.iloc[0]['role']
-                # 3. SECURITY: URL-i təmizlə ki, token qalmasın
                 st.query_params.clear()
         except: pass
 
 def cleanup_old_sessions():
-    # 24 saatdan köhnə sessiyaları sil
     try: run_action("DELETE FROM active_sessions WHERE created_at < NOW() - INTERVAL '24 hours'")
     except: pass
 
@@ -210,9 +200,7 @@ def generate_receipt_html(sale_data):
     r_phone = get_setting("receipt_phone", "+994 50 000 00 00")
     r_footer = get_setting("receipt_footer", "Bizi seçdiyiniz üçün təşəkkürlər!")
     r_logo_b64 = get_setting("receipt_logo_base64", "")
-    
     logo_html = f'<div style="text-align:center;"><img src="data:image/png;base64,{r_logo_b64}" style="max-width:80px;"></div><br>' if r_logo_b64 else ''
-    
     items_html = "<table style='width:100%; border-collapse: collapse; font-size:13px;'>"
     if isinstance(sale_data['items'], str):
         clean_items_str = sale_data['items']
@@ -224,30 +212,19 @@ def generate_receipt_html(sale_data):
             else: name = item; qty = "1"
             items_html += f"<tr><td style='text-align:left;'>{name}</td><td style='text-align:right;'>x{qty}</td></tr>"
     items_html += "</table>"
-
     header_extra = ""
     if sale_data['items'].startswith("["):
         header_extra = f"<div style='text-align:center; font-weight:bold; margin:5px 0;'>{sale_data['items'].split(']')[0][1:]}</div>"
-
     return f"""
     <div class="paper-receipt">
-        {logo_html}
-        <div style="text-align:center; font-weight:bold; font-size:18px; text-transform:uppercase;">{r_store}</div>
+        {logo_html}<div style="text-align:center; font-weight:bold; font-size:18px;">{r_store}</div>
         <div style="text-align:center; font-size:12px; margin-bottom:5px;">{r_addr}</div>
         <div style="text-align:center; font-size:12px;">Tel: {r_phone}</div>
         <div class="receipt-cut-line"></div>
-        <div style="font-size:12px;">
-            TARİX: {sale_data['date']}<br>
-            ÇEK №: {sale_data['id']}<br>
-            KASSİR: {sale_data['cashier']}
-        </div>
-        {header_extra}
-        <div class="receipt-cut-line"></div>
-        {items_html}
-        <div class="receipt-cut-line"></div>
+        <div style="font-size:12px;">TARİX: {sale_data['date']}<br>ÇEK №: {sale_data['id']}<br>KASSİR: {sale_data['cashier']}</div>
+        {header_extra}<div class="receipt-cut-line"></div>{items_html}<div class="receipt-cut-line"></div>
         <div style="text-align:right; font-weight:bold; font-size:18px;">CƏM: {sale_data['total']:.2f} ₼</div>
-        <div class="receipt-cut-line"></div>
-        <div style="text-align:center; font-size:12px; font-style:italic;">{r_footer}</div>
+        <div class="receipt-cut-line"></div><div style="text-align:center; font-size:12px; font-style:italic;">{r_footer}</div>
     </div>
     """
 
@@ -257,7 +234,7 @@ def show_receipt_dialog():
         st.markdown(generate_receipt_html(st.session_state.last_sale), unsafe_allow_html=True)
         st.info("Çap etmək üçün: Ctrl + P")
 
-# --- RENDER FUNCTIONS ---
+# --- RENDERERS ---
 def render_analytics(is_admin=False):
     tabs = st.tabs(["Satışlar", "Xərclər (P&L)", "Sistem Logları"]) if is_admin else st.tabs(["Mənim Satışlarım"])
     with tabs[0]:
@@ -319,7 +296,6 @@ def render_takeaway():
         
         st.markdown(f"<h2 style='text-align:right; color:#E65100'>{tb:.2f} ₼</h2>", unsafe_allow_html=True)
         pm = st.radio("Metod", ["Nəğd", "Kart"], horizontal=True, key="pm_ta")
-        
         if st.button("✅ ÖDƏNİŞ ET", type="primary", use_container_width=True, key="pay_ta"):
             if not st.session_state.cart_takeaway: st.error("Boşdur!"); st.stop()
             try:
@@ -338,7 +314,6 @@ def render_takeaway():
                 st.session_state.last_sale = {"id": int(time.time()), "items": istr, "total": tb, "date": get_baku_now().strftime("%Y-%m-%d %H:%M"), "cashier": st.session_state.user}
                 st.session_state.cart_takeaway=[]; st.rerun()
             except Exception as e: st.error(str(e))
-
     with c2: render_menu_grid(st.session_state.cart_takeaway, "ta")
 
 def render_tables_main():
@@ -356,7 +331,6 @@ def render_table_grid():
                 tabs = run_query("SELECT label FROM tables")
                 d_l = st.selectbox("Silinəcək", tabs['label'].tolist() if not tabs.empty else [], key="del_table_select")
                 if st.button("❌ Sil", key="del_table_btn"): run_action("DELETE FROM tables WHERE label=:l", {"l":d_l}); st.rerun()
-
     st.markdown("### 🍽️ ZAL PLAN")
     tables = run_query("SELECT * FROM tables ORDER BY id")
     cols = st.columns(3)
@@ -374,7 +348,6 @@ def render_table_order():
     tbl = st.session_state.selected_table
     if st.button("⬅️ Masalara Qayıt", key="back_tbl", use_container_width=True):
         st.session_state.selected_table = None; st.session_state.cart_table = []; st.rerun()
-
     st.markdown(f"### 📝 Sifariş: {tbl['label']}")
     c1, c2 = st.columns([1.5, 3])
     with c1:
@@ -392,7 +365,6 @@ def render_table_order():
             c = st.session_state.current_customer_tb
             st.success(f"👤 {c['card_id']} | ⭐ {c['stars']}")
             if st.button("Ləğv Et", key="tb_cl"): st.session_state.current_customer_tb=None; st.rerun()
-
         tb = 0
         if st.session_state.cart_table:
             for i, it in enumerate(st.session_state.cart_table):
@@ -404,21 +376,18 @@ def render_table_order():
                     else: st.session_state.cart_table.pop(i)
                     st.rerun()
                 if b2.button("➕", key=f"p_tb_{i}"): it['qty']+=1; st.rerun()
-        
         st.markdown(f"<h2 style='text-align:right; color:#E65100'>{tb:.2f} ₼</h2>", unsafe_allow_html=True)
         col_s, col_p = st.columns(2)
         if col_s.button("💾 YADDA SAXLA", key="save_tbl", use_container_width=True):
             run_action("UPDATE tables SET is_occupied=TRUE, items=:i, total=:t WHERE id=:id", 
                        {"i":json.dumps(st.session_state.cart_table), "t":tb, "id":tbl['id']})
             st.success("Göndərildi!"); time.sleep(0.5); st.session_state.selected_table=None; st.rerun()
-
         pm = st.radio("Metod", ["Nəğd", "Kart"], horizontal=True, key="pm_tb")
         if col_p.button("✅ ÖDƏNİŞ ET", key="pay_tbl", type="primary", use_container_width=True):
             if not st.session_state.cart_table: st.error("Boşdur!"); st.stop()
             try:
                 raw_items = ", ".join([f"{x['item_name']} x{x['qty']}" for x in st.session_state.cart_table])
                 istr = f"[{tbl['label']}] " + raw_items
-                
                 run_action("INSERT INTO sales (items, total, payment_method, cashier, created_at) VALUES (:i,:t,:p,:c,:time)", 
                            {"i":istr,"t":tb,"p":("Cash" if pm=="Nəğd" else "Card"),"c":st.session_state.user, "time":get_baku_now()})
                 with conn.session as s:
@@ -434,7 +403,6 @@ def render_table_order():
                 st.session_state.last_sale = {"id": int(time.time()), "items": istr, "total": tb, "date": get_baku_now().strftime("%Y-%m-%d %H:%M"), "cashier": st.session_state.user}
                 st.session_state.cart_table=[]; st.session_state.selected_table=None; st.rerun()
             except Exception as e: st.error(str(e))
-
     with c2: render_menu_grid(st.session_state.cart_table, "tb")
 
 def render_menu_grid(cart_ref, key_prefix):
@@ -444,15 +412,13 @@ def render_menu_grid(cart_ref, key_prefix):
         sc = st.radio("Kataloq", cl, horizontal=True, label_visibility="collapsed", key=f"cat_{key_prefix}")
         sql = "SELECT * FROM menu WHERE is_active=TRUE"; p = {}; 
         if sc != "Hamısı": sql += " AND category=:c"; p["c"] = sc
-        sql += " ORDER BY price ASC"
-        prods = run_query(sql, p)
+        sql += " ORDER BY price ASC"; prods = run_query(sql, p)
         gr = {}
         for _, r in prods.iterrows():
             n = r['item_name']; pts = n.split()
             if len(pts)>1 and pts[-1] in ['S','M','L','XL','Single','Double']:
                 base = " ".join(pts[:-1]); gr.setdefault(base, []).append(r)
             else: gr[n] = [r]
-        
         cols = st.columns(4); i=0
         @st.dialog("Ölçü Seçimi")
         def show_v(bn, its):
@@ -461,15 +427,13 @@ def render_menu_grid(cart_ref, key_prefix):
                 lbl = it['item_name'].replace(bn, "").strip()
                 if st.button(f"{lbl}\n{it['price']} ₼", key=f"v_{it['id']}_{key_prefix}", use_container_width=True):
                     cart_ref.append({'item_name':it['item_name'], 'price':float(it['price']), 'qty':1, 'is_coffee':it['is_coffee']}); st.rerun()
-
         for bn, its in gr.items():
             with cols[i%4]:
                 if len(its)>1:
                     label = f"{bn}\n(Seçim)"
                     if st.button(label, key=f"g_{bn}_{key_prefix}", use_container_width=True): show_v(bn, its)
                 else:
-                    it = its[0]
-                    label = f"{it['item_name']}\n{it['price']} ₼"
+                    it = its[0]; label = f"{it['item_name']}\n{it['price']} ₼"
                     if st.button(label, key=f"s_{it['id']}_{key_prefix}", use_container_width=True):
                         cart_ref.append({'item_name':it['item_name'], 'price':float(it['price']), 'qty':1, 'is_coffee':it['is_coffee']}); st.rerun()
             i+=1
@@ -585,7 +549,7 @@ else:
                             ings = run_query("SELECT name, unit FROM ingredients ORDER BY name")
                             c_i, c_q = st.columns(2)
                             i_sel = c_i.selectbox("Xammal", ings['name'].tolist(), key=f"isel_{idx}")
-                            q_val = c_q.number_input("Miqdar", 0.1, min_value=0.0, key=f"iq_{idx}")
+                            q_val = c_q.number_input("Miqdar", value=0.1, min_value=0.0, step=0.1, key=f"iq_{idx}")
                             if st.form_submit_button("➕ Əlavə Et"):
                                 run_action("INSERT INTO recipes (menu_item_name, ingredient_name, quantity_required) VALUES (:m,:i,:q)", 
                                            {"m":m_name, "i":i_sel, "q":q_val}); st.rerun()
@@ -641,7 +605,7 @@ else:
             if not ml.empty:
                 dm = st.selectbox("Silinəcək Məhsul", ml['item_name'].unique(), key="del_menu_select")
                 if st.button("❌ Məhsulu Sil", key="btn_del_menu_item"): run_action("DELETE FROM menu WHERE item_name=:n", {"n":dm}); st.rerun()
-        with tabs[7]: # Ayarlar (HOTFIX: RECEIPT MANUAL & PASSWORD)
+        with tabs[7]: # Ayarlar
             st.subheader("⚙️ Ayarlar")
             c1, c2 = st.columns(2)
             with c1:
