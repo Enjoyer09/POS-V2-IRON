@@ -17,10 +17,10 @@ import base64
 import json
 
 # ==========================================
-# === IRONWAVES POS - V3.0.1 GOLD (FIXED) ===
+# === IRONWAVES POS - V3.1 PLATINUM ===
 # ==========================================
 
-VERSION = "v3.0.1 GOLD (HOTFIX)"
+VERSION = "v3.1 PLATINUM"
 
 # --- INFRA ---
 RESEND_API_KEY = os.environ.get("RESEND_API_KEY")
@@ -287,7 +287,7 @@ def cleanup_old_sessions():
     try: run_action("DELETE FROM active_sessions WHERE created_at < NOW() - INTERVAL '24 hours'")
     except: pass
 
-# --- RECEIPT ---
+# --- RECEIPT (SMART LAYOUT) ---
 def generate_receipt_html(sale_data):
     r_store = get_setting("receipt_store_name", "EMALATXANA")
     r_addr = get_setting("receipt_address", "Bakı ş., Mərkəz")
@@ -311,6 +311,16 @@ def generate_receipt_html(sale_data):
     header_extra = ""
     if sale_data['items'].startswith("["): header_extra = f"<div style='text-align:center; font-weight:bold; margin:5px 0;'>{sale_data['items'].split(']')[0][1:]}</div>"
     
+    # Financials (Smart Layout)
+    financial_html = ""
+    subtotal = sale_data.get('subtotal', sale_data['total'])
+    discount = sale_data.get('discount', 0)
+    
+    financial_html += f"<div style='display:flex; justify-content:space-between; margin-top:5px;'><span>Ara Cəm:</span><span>{subtotal:.2f} ₼</span></div>"
+    if discount > 0:
+        financial_html += f"<div style='display:flex; justify-content:space-between; color:red; font-weight:bold;'><span>Endirim:</span><span>-{discount:.2f} ₼</span></div>"
+    financial_html += f"<div style='display:flex; justify-content:space-between; font-weight:bold; font-size:18px; margin-top:5px; border-top:1px solid black; padding-top:5px;'><span>YEKUN:</span><span>{sale_data['total']:.2f} ₼</span></div>"
+
     extra_contacts = ""
     if r_web: extra_contacts += f"🌐 {r_web}<br>"
     if r_insta: extra_contacts += f"📸 {r_insta}<br>"
@@ -324,17 +334,32 @@ def generate_receipt_html(sale_data):
         <div class="receipt-cut-line"></div>
         <div style="font-size:12px;">TARİX: {sale_data['date']}<br>ÇEK №: {sale_data['id']}<br>KASSİR: {sale_data['cashier']}</div>
         {header_extra}<div class="receipt-cut-line"></div>{items_html}<div class="receipt-cut-line"></div>
-        <div style="text-align:right; font-weight:bold; font-size:18px;">CƏM: {sale_data['total']:.2f} ₼</div>
+        {financial_html}
         <div class="receipt-cut-line"></div>
         <div style="text-align:center; font-size:11px;">{extra_contacts}</div>
         <div style="text-align:center; font-size:12px; font-style:italic; margin-top:5px;">{r_footer}</div>
     </div>
     """
 
-@st.dialog("Çap Edin")
+@st.dialog("Çek Əməliyyatları")
 def show_receipt_dialog():
     if 'last_sale' in st.session_state and st.session_state.last_sale:
-        st.markdown(generate_receipt_html(st.session_state.last_sale), unsafe_allow_html=True); st.info("Çap etmək üçün: Ctrl + P")
+        sale = st.session_state.last_sale
+        receipt_html = generate_receipt_html(sale)
+        st.markdown(receipt_html, unsafe_allow_html=True)
+        
+        st.divider()
+        c_print, c_email = st.columns(2)
+        c_print.info("🖨️ Çap etmək üçün: **Ctrl + P**")
+        
+        if sale.get('customer_email'):
+            if c_email.button("📧 Emailə Göndər", type="primary", use_container_width=True):
+                if send_email(sale['customer_email'], f"Sizin Çekiniz (№{sale['id']}) - {get_setting('receipt_store_name', 'EMALATXANA')}", receipt_html):
+                    st.toast("✅ Email uğurla göndərildi!")
+                else:
+                    st.toast("❌ Göndərmək mümkün olmadı (API Error)")
+        else:
+            c_email.button("📧 Email (Yoxdur)", disabled=True, use_container_width=True)
 
 # --- RENDERERS ---
 def render_analytics(is_admin=False):
@@ -407,6 +432,8 @@ def render_takeaway():
             try:
                 istr = ", ".join([f"{x['item_name']} x{x['qty']}" for x in st.session_state.cart_takeaway])
                 cust_id = st.session_state.current_customer_ta['card_id'] if st.session_state.current_customer_ta else None
+                cust_email = st.session_state.current_customer_ta.get('email') if st.session_state.current_customer_ta else None
+                
                 run_action("INSERT INTO sales (items, total, payment_method, cashier, created_at, customer_card_id) VALUES (:i,:t,:p,:c,:time, :cid)", 
                            {"i":istr,"t":final_total,"p":("Cash" if pm=="Nəğd" else "Card"),"c":st.session_state.user, "time":get_baku_now(), "cid":cust_id})
                 with conn.session as s:
@@ -417,7 +444,16 @@ def render_takeaway():
                         gain = sum([x['qty'] for x in st.session_state.cart_takeaway if x.get('is_coffee')])
                         s.execute(text("UPDATE customers SET stars=stars+:s WHERE card_id=:id"), {"s":gain, "id":cust_id})
                     s.commit()
-                st.session_state.last_sale = {"id": int(time.time()), "items": istr, "total": final_total, "date": get_baku_now().strftime("%Y-%m-%d %H:%M"), "cashier": st.session_state.user}
+                st.session_state.last_sale = {
+                    "id": int(time.time()), 
+                    "items": istr, 
+                    "total": final_total, 
+                    "subtotal": raw_total,
+                    "discount": raw_total - final_total,
+                    "date": get_baku_now().strftime("%Y-%m-%d %H:%M"), 
+                    "cashier": st.session_state.user,
+                    "customer_email": cust_email
+                }
                 st.session_state.cart_takeaway=[]; st.rerun()
             except Exception as e: st.error(str(e))
     with c2: render_menu_grid(st.session_state.cart_takeaway, "ta")
@@ -476,7 +512,7 @@ def render_table_order():
 
         if st.session_state.cart_table:
             for i, it in enumerate(st.session_state.cart_table):
-                sub = it['qty']*it['price']; tb=0 # FIX: Just using sub for display, tb removed
+                sub = it['qty']*it['price']; tb=0 # Fixed variable
                 st.markdown(f"<div style='background:white;padding:10px;margin-bottom:5px;border-radius:8px;display:flex;justify-content:space-between;align-items:center;border:1px solid #ddd;'><div style='flex:2'><b>{it['item_name']}</b></div><div style='flex:1'>{it['price']}</div><div style='flex:1;color:#E65100'>x{it['qty']}</div><div style='flex:1;text-align:right'>{sub:.1f}</div></div>", unsafe_allow_html=True)
                 b1,b2,b3=st.columns([1,1,4])
                 if b1.button("➖", key=f"m_tb_{i}"): 
@@ -500,6 +536,8 @@ def render_table_order():
                 raw_items = ", ".join([f"{x['item_name']} x{x['qty']}" for x in st.session_state.cart_table])
                 istr = f"[{tbl['label']}] " + raw_items
                 cust_id = st.session_state.current_customer_tb['card_id'] if st.session_state.current_customer_tb else None
+                cust_email = st.session_state.current_customer_tb.get('email') if st.session_state.current_customer_tb else None
+                
                 run_action("INSERT INTO sales (items, total, payment_method, cashier, created_at, customer_card_id) VALUES (:i,:t,:p,:c,:time, :cid)", 
                            {"i":istr,"t":final_total,"p":("Cash" if pm=="Nəğd" else "Card"),"c":st.session_state.user, "time":get_baku_now(), "cid":cust_id})
                 with conn.session as s:
@@ -511,7 +549,16 @@ def render_table_order():
                         s.execute(text("UPDATE customers SET stars=stars+:s WHERE card_id=:id"), {"s":gain, "id":cust_id})
                     s.commit()
                 run_action("UPDATE tables SET is_occupied=FALSE, items=NULL, total=0 WHERE id=:id", {"id":tbl['id']})
-                st.session_state.last_sale = {"id": int(time.time()), "items": istr, "total": final_total, "date": get_baku_now().strftime("%Y-%m-%d %H:%M"), "cashier": st.session_state.user}
+                st.session_state.last_sale = {
+                    "id": int(time.time()), 
+                    "items": istr, 
+                    "total": final_total, 
+                    "subtotal": raw_total,
+                    "discount": raw_total - final_total,
+                    "date": get_baku_now().strftime("%Y-%m-%d %H:%M"), 
+                    "cashier": st.session_state.user,
+                    "customer_email": cust_email
+                }
                 st.session_state.cart_table=[]; st.session_state.selected_table=None; st.rerun()
             except Exception as e: st.error(str(e))
     with c2: render_menu_grid(st.session_state.cart_table, "tb")
@@ -611,7 +658,7 @@ else:
         tabs = st.tabs(["🏃‍♂️ AL-APAR", "🍽️ MASALAR", "📦 Anbar", "📜 Resept", "Analitika", "CRM", "Menyu", "⚙️ Ayarlar", "Admin", "QR"])
         with tabs[0]: render_takeaway()
         with tabs[1]: render_tables_main()
-        with tabs[2]: # Anbar (DYNAMIC TABS)
+        with tabs[2]: # Anbar
             st.subheader("📦 Anbar")
             cats = run_query("SELECT DISTINCT category FROM ingredients ORDER BY category")['category'].tolist()
             if not cats: cats = ["Ümumi"]
@@ -661,7 +708,7 @@ else:
                                 if st.form_submit_button("Yarat"):
                                     run_action("INSERT INTO ingredients (name,stock_qty,unit,category) VALUES (:n,:q,:u,:c)", {"n":n,"q":q,"u":u,"c":c}); st.rerun()
 
-        with tabs[3]: # Resept (FINAL)
+        with tabs[3]: # Resept
             st.subheader("📜 Reseptlər")
             rc1, rc2 = st.columns([1, 2])
             with rc1: 
@@ -719,7 +766,7 @@ else:
                 else: st.info("👈 Soldan məhsul seçin")
 
         with tabs[4]: render_analytics(is_admin=True)
-        with tabs[5]: # CRM (FINAL)
+        with tabs[5]: # CRM
             st.subheader("👥 CRM"); c_cp, c_mail = st.columns(2)
             with c_cp:
                 crm_tabs = st.tabs(["Kupon Yarat", "Şablonlar"])
@@ -758,7 +805,7 @@ else:
                             if e and send_email(e, sub, msg): c+=1
                         st.success(f"{c} email getdi!")
 
-        with tabs[6]: # Menyu (BULK DELETE)
+        with tabs[6]: # Menyu
             st.subheader("📋 Menyu")
             with st.expander("📥 Excel"):
                 up = st.file_uploader("Fayl", type=['xlsx'])
@@ -778,7 +825,7 @@ else:
                     for i_n in to_del_menu: run_action("DELETE FROM menu WHERE item_name=:n", {"n":i_n})
                     st.rerun()
 
-        with tabs[7]: # Ayarlar (FINAL)
+        with tabs[7]: # Ayarlar
             st.subheader("⚙️ Ayarlar")
             c1, c2 = st.columns(2)
             with c1:
@@ -837,10 +884,9 @@ else:
                             except Exception as e: st.error(f"Xəta: {e}")
                     else: st.error("Şifrə səhvdir")
 
-        with tabs[9]: # QR (SMART ZIP)
+        with tabs[9]: # QR
             cnt = st.number_input("Say", value=1, min_value=1, key="qr_cnt"); k = st.selectbox("Növ", ["Standard", "Termos", "10%", "20%", "50%"])
             if st.button("Yarat", key="gen_qr"):
-                # ZIP Logic
                 zb = BytesIO()
                 with zipfile.ZipFile(zb, "w") as zf:
                     images = []
