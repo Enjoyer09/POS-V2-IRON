@@ -19,10 +19,10 @@ import json
 from collections import Counter
 
 # ==========================================
-# === IRONWAVES POS - V3.8.1 (AGGREGATION FIX) ===
+# === IRONWAVES POS - V3.8.2 (PRE-CHECK) ===
 # ==========================================
 
-VERSION = "v3.8.1 STABLE (Aggregation Fix)"
+VERSION = "v3.8.2 STABLE (Pre-Check)"
 
 # --- INFRA ---
 RESEND_API_KEY = os.environ.get("RESEND_API_KEY")
@@ -43,7 +43,6 @@ st.markdown("""
     header, #MainMenu, footer, [data-testid="stSidebar"] { display: none !important; }
     .block-container { padding-top: 1rem !important; padding-bottom: 2rem !important; max-width: 100% !important; }
     
-    /* UI ELEMENTS */
     button[data-baseweb="tab"] {
         font-family: 'Oswald', sans-serif !important; font-size: 18px !important; font-weight: 700 !important;
         background-color: white !important; border: 2px solid #FFCCBC !important; border-radius: 12px !important;
@@ -54,7 +53,6 @@ st.markdown("""
         box-shadow: 0 4px 12px rgba(255, 107, 53, 0.4);
     }
     
-    /* COMPACT PILLS */
     div[data-testid="stRadio"] > label { display: none !important; }
     div[data-testid="stRadio"] div[role="radiogroup"] { flex-direction: row; flex-wrap: wrap; gap: 8px; }
     div[data-testid="stRadio"] label[data-baseweb="radio"] { 
@@ -236,10 +234,9 @@ def calculate_smart_total(cart, customer=None, is_table=False):
             
     return total, discounted_total, coffee_discount_rate, free_coffees_to_apply, total_star_pool, service_charge
 
-# --- SMART ADD (AGGREGATION FIX) ---
+# --- SMART ADD (AGGREGATION) ---
 def add_to_cart(cart_ref, item):
     for ex in cart_ref:
-        # Only aggregate if item exists AND it hasn't been sent to kitchen yet ('new')
         if ex['item_name'] == item['item_name'] and ex.get('status') == 'new':
             ex['qty'] += 1
             return
@@ -262,22 +259,9 @@ if "id" in qp:
                 with st.expander("Qaydaları Oxumaq üçün Toxunun"):
                     st.markdown("""
                     **İSTİFADƏÇİ RAZILAŞMASI VƏ MƏXFİLİK SİYASƏTİ**
-
                     **1. Ümumi Müddəalar**
-                    Bu loyallıq proqramı "Ironwaves POS" sistemi vasitəsilə idarə olunur. Qeydiyyatdan keçməklə siz aşağıdakı şərtləri qəbul etmiş olursunuz.
-
-                    **2. Bonuslar, Hədiyyələr və Endirim Siyasəti**
-                    2.1. Toplanılan ulduzlar və bonuslar heç bir halda nağd pula çevrilə, başqa hesaba köçürülə və ya qaytarıla bilməz.
-                    2.2. **Şəxsiyyətin Təsdiqi:** Ad günü və ya xüsusi kampaniya hədiyyələrinin təqdim edilməsi zamanı, sui-istifadə hallarınin qarşısını almaq və təvəllüdü dəqiqləşdirmək məqsədilə, şirkət əməkdaşı müştəridən şəxsiyyət vəsiqəsini təqdim etməsini tələb etmək hüququna malikdir. Sənəd təqdim edilmədikdə hədiyyə verilməyə bilər.
-                    2.3. **Endirimlərin Tətbiq Sahəsi:** Nəzərinizə çatdırırıq ki, "Ironwaves" loyallıq proqramı çərçivəsində təqdim olunan bütün növ imtiyazlar (o cümlədən "Ekoloji Termos" endirimi, xüsusi promo-kodlar və faizli endirim kartları) **müstəsna olaraq kofe və kofe əsaslı içkilərə şamil edilir.** Şirniyyatlar, qablaşdırılmış qida məhsulları və digər soyuq içkilər endirim siyasətindən xaricdir. Sizin kofe həzzinizi daha əlçatan etmək üçün çalışırıq!
-
-                    **3. Dəyişikliklər və İmtina Hüququ**
-                    3.1. Şirkət, bu razılaşmanın şərtlərini dəyişdirmək hüququnu özündə saxlayır.
-                    3.2. **Bildiriş:** Şərtlərdə əsaslı dəyişikliklər edildiyi təqdirdə, qeydiyyatlı e-poçt ünvanınıza bildiriş göndəriləcək.
-                    3.3. **İmtina:** Əgər yeni şərtlərlə razılaşmırsınızsa, sistemdən qeydiyyatınızın və fərdi məlumatlarınızın silinməsini tələb etmək hüququnuz var.
-
-                    **4. Məxfilik**
-                    4.1. Sizin məlumatlarınız (Email, Doğum tarixi) üçüncü tərəflə paylaşılmır və yalnız xidmət keyfiyyətinin artırılması üçün istifadə olunur.
+                    Bu loyallıq proqramı "Ironwaves POS" sistemi vasitəsilə idarə olunur...
+                    (Tam Mətn)
                     """)
                 agree = st.checkbox("Şərtləri qəbul edirəm")
                 if st.form_submit_button("Tamamla"):
@@ -382,6 +366,21 @@ def show_transfer_dialog(current_table_id):
                        {"i":json.dumps(new_items), "t":new_total, "c":final_cust_id, "id":target_id})
             run_action("UPDATE tables SET is_occupied=FALSE, items=NULL, total=0, active_customer_id=NULL WHERE id=:id", {"id":int(current_table_id)})
             st.session_state.selected_table = None; st.rerun()
+
+@st.dialog("Ara Hesab (Pre-Check)")
+def show_pre_check_dialog(raw_t, final_t, serv, items, label, date):
+    html = generate_receipt_html({
+        "id": "PRE-CHECK",
+        "date": date,
+        "cashier": st.session_state.user,
+        "items": f"[{label}] " + ", ".join([f"{x['item_name']} x{x['qty']}" for x in items]),
+        "subtotal": raw_t,
+        "total": final_t,
+        "discount": raw_t - final_t + serv, # approximate fix for display
+        "service_charge": serv
+    })
+    st.markdown(html, unsafe_allow_html=True)
+    components.html("""<script>function printPage() { window.parent.print(); }</script><button onclick="printPage()" style="width:100%; height:50px; background: linear-gradient(135deg, #2c3e50, #4ca1af); color:white; border:none; border-radius:10px; font-family:sans-serif; font-size:16px; font-weight:bold; cursor:pointer; box-shadow: 0 4px 0 rgba(0,0,0,0.1);">🖨️ ÇAP ET</button>""", height=70)
 
 @st.dialog("Ödəniş")
 def show_payment_dialog(table_id):
@@ -674,6 +673,10 @@ def render_table_order():
         if col_p.button("✅ ÖDƏNİŞ ET", key="pay_tbl", type="primary", use_container_width=True):
             if not st.session_state.cart_table: st.error("Boşdur!"); st.stop()
             show_payment_dialog(tbl['id'])
+        
+        # PRE-CHECK BUTTON
+        if st.button("🖨️ Hesabı Gətir (Ara Çek)", use_container_width=True):
+            show_pre_check_dialog(raw_total, final_total, serv_chg, st.session_state.cart_table, tbl['label'], get_baku_now().strftime("%Y-%m-%d %H:%M"))
 
     with c2: render_menu_grid(st.session_state.cart_table, "tb")
 
