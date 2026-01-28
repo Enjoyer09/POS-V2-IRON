@@ -16,12 +16,13 @@ import requests
 from urllib.parse import urlparse, parse_qs 
 import base64
 import json
+from collections import Counter
 
 # ==========================================
-# === IRONWAVES POS - V3.6 STABLE (FIXED) ===
+# === IRONWAVES POS - V3.7 STABLE (DB & TRANSFER) ===
 # ==========================================
 
-VERSION = "v3.6 STABLE (NumPy Fix)"
+VERSION = "v3.7 STABLE (DB & Transfer Fix)"
 
 # --- INFRA ---
 RESEND_API_KEY = os.environ.get("RESEND_API_KEY")
@@ -42,6 +43,17 @@ st.markdown("""
     header, #MainMenu, footer, [data-testid="stSidebar"] { display: none !important; }
     .block-container { padding-top: 1rem !important; padding-bottom: 2rem !important; max-width: 100% !important; }
     
+    /* UI ELEMENTS */
+    button[data-baseweb="tab"] {
+        font-family: 'Oswald', sans-serif !important; font-size: 18px !important; font-weight: 700 !important;
+        background-color: white !important; border: 2px solid #FFCCBC !important; border-radius: 12px !important;
+        margin: 0 4px !important; color: #555 !important; flex-grow: 1;
+    }
+    button[data-baseweb="tab"][aria-selected="true"] {
+        background: linear-gradient(135deg, #FF6B35, #FF8C00) !important; border-color: #FF6B35 !important; color: white !important;
+        box-shadow: 0 4px 12px rgba(255, 107, 53, 0.4);
+    }
+    
     /* COMPACT PILLS (CATEGORY) */
     div[data-testid="stRadio"] > label { display: none !important; }
     div[data-testid="stRadio"] div[role="radiogroup"] { flex-direction: row; flex-wrap: wrap; gap: 8px; }
@@ -53,15 +65,12 @@ st.markdown("""
         background: #FF6B35; color: white; border-color: #FF6B35;
     }
 
-    /* BIG MENU BUTTONS */
     div.stButton > button { border-radius: 12px !important; height: 60px !important; font-weight: 700 !important; box-shadow: 0 4px 0 rgba(0,0,0,0.1) !important; transition: all 0.1s !important; }
     div.stButton > button:active { transform: translateY(3px) !important; box-shadow: none !important; }
     div.stButton > button[kind="primary"] { background: linear-gradient(135deg, #FF6B35, #FF8C00) !important; color: white !important; }
     
-    /* SMALL CART BUTTONS */
     .small-btn button { height: 35px !important; min-height: 35px !important; font-size: 14px !important; padding: 0 !important; }
 
-    /* TABLE BUTTONS */
     div.stButton > button[kind="secondary"] { background: linear-gradient(135deg, #43A047, #2E7D32) !important; color: white !important; border: 2px solid #1B5E20 !important; height: 120px !important; font-size: 24px !important; white-space: pre-wrap !important; }
     div.stButton > button[kind="primary"].table-occ { background: linear-gradient(135deg, #E53935, #C62828) !important; color: white !important; border: 2px solid #B71C1C !important; height: 120px !important; font-size: 24px !important; white-space: pre-wrap !important; animation: pulse-red 2s infinite; }
 
@@ -70,7 +79,6 @@ st.markdown("""
     .coffee-icon { width: 45px; opacity: 0.2; filter: grayscale(100%); transition: all 0.5s; }
     .coffee-icon.active { opacity: 1; filter: none; transform: scale(1.1); }
     
-    /* RECEIPT */
     .paper-receipt { background-color: #fff; width: 100%; max-width: 350px; padding: 20px; margin: 0 auto; box-shadow: 0 0 15px rgba(0,0,0,0.1); font-family: 'Courier Prime', monospace; font-size: 13px; color: #000; border: 1px solid #ddd; }
     .receipt-cut-line { border-bottom: 2px dashed #000; margin: 15px 0; }
     
@@ -108,8 +116,13 @@ def ensure_schema():
         s.execute(text("CREATE TABLE IF NOT EXISTS system_logs (id SERIAL PRIMARY KEY, username TEXT, action TEXT, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP);"))
         s.execute(text("CREATE TABLE IF NOT EXISTS expenses (id SERIAL PRIMARY KEY, title TEXT, amount DECIMAL(10,2), category TEXT, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP);"))
         s.execute(text("CREATE TABLE IF NOT EXISTS coupon_templates (id SERIAL PRIMARY KEY, name TEXT, percent INTEGER, days_valid INTEGER, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP);"))
+        
+        # SCHEMA UPDATES (V3.7)
         try: s.execute(text("ALTER TABLE sales ADD COLUMN IF NOT EXISTS customer_card_id TEXT;"))
         except: pass
+        try: s.execute(text("ALTER TABLE tables ADD COLUMN IF NOT EXISTS active_customer_id TEXT;"))
+        except: pass
+        
         res = s.execute(text("SELECT count(*) FROM tables")).fetchone()
         if res[0] == 0:
             for i in range(1, 7): s.execute(text("INSERT INTO tables (label, is_occupied) VALUES (:l, FALSE)"), {"l": f"MASA {i}"})
@@ -127,7 +140,6 @@ ensure_schema()
 # --- HELPERS ---
 def get_baku_now(): return datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=4))).replace(tzinfo=None)
 def run_query(q, p=None): 
-    # NumPy Fix: Convert all numpy ints to python ints
     if p:
         for k, v in p.items():
             if hasattr(v, 'item'): p[k] = int(v.item())
@@ -259,7 +271,7 @@ if "id" in qp:
                     3.3. **İmtina:** Əgər yeni şərtlərlə razılaşmırsınızsa, sistemdən qeydiyyatınızın və fərdi məlumatlarınızın silinməsini tələb etmək hüququnuz var.
 
                     **4. Məxfilik**
-                    4.1. Sizin məlumatlarınız (Email, Doğum tarixi) üçüncü tərəflərlə paylaşılmır və yalnız xidmət keyfiyyətinin artırılması üçün istifadə olunur.
+                    4.1. Sizin məlumatlarınız (Email, Doğum tarixi) üçüncü tərəflə paylaşılmır və yalnız xidmət keyfiyyətinin artırılması üçün istifadə olunur.
                     """)
                 agree = st.checkbox("Şərtləri qəbul edirəm")
                 if st.form_submit_button("Tamamla"):
@@ -342,21 +354,29 @@ def show_receipt_dialog():
 
 @st.dialog("Masa Transferi")
 def show_transfer_dialog(current_table_id):
-    tables = run_query("SELECT id, label, is_occupied FROM tables WHERE id != :id ORDER BY id", {"id":current_table_id})
+    tables = run_query("SELECT id, label, is_occupied, active_customer_id FROM tables WHERE id != :id ORDER BY id", {"id":current_table_id})
     if not tables.empty:
         target = st.selectbox("Hara köçürülsün?", tables['label'].tolist())
         if st.button("Təsdiqlə"):
-            target_id = int(tables[tables['label']==target].iloc[0]['id']) # FIX: Force int
-            curr = run_query("SELECT items, total FROM tables WHERE id=:id", {"id":int(current_table_id)}).iloc[0]
-            targ = run_query("SELECT items, total FROM tables WHERE id=:id", {"id":target_id}).iloc[0]
+            target_row = tables[tables['label']==target].iloc[0]
+            target_id = int(target_row['id'])
+            
+            curr = run_query("SELECT items, total, active_customer_id FROM tables WHERE id=:id", {"id":int(current_table_id)}).iloc[0]
+            targ = run_query("SELECT items, total, active_customer_id FROM tables WHERE id=:id", {"id":target_id}).iloc[0]
             
             c_items = json.loads(curr['items']) if curr['items'] else []
             t_items = json.loads(targ['items']) if targ['items'] else []
             new_items = t_items + c_items
             new_total = float(curr['total'] or 0) + float(targ['total'] or 0)
             
-            run_action("UPDATE tables SET is_occupied=TRUE, items=:i, total=:t WHERE id=:id", {"i":json.dumps(new_items), "t":new_total, "id":target_id})
-            run_action("UPDATE tables SET is_occupied=FALSE, items=NULL, total=0 WHERE id=:id", {"id":int(current_table_id)})
+            # CUSTOMER TRANSFER LOGIC
+            # If target is occupied, keep target's customer. If empty, move current customer.
+            final_cust_id = targ['active_customer_id'] if targ['active_customer_id'] else curr['active_customer_id']
+            
+            run_action("UPDATE tables SET is_occupied=TRUE, items=:i, total=:t, active_customer_id=:c WHERE id=:id", 
+                       {"i":json.dumps(new_items), "t":new_total, "c":final_cust_id, "id":target_id})
+            
+            run_action("UPDATE tables SET is_occupied=FALSE, items=NULL, total=0, active_customer_id=NULL WHERE id=:id", {"id":int(current_table_id)})
             st.session_state.selected_table = None; st.rerun()
 
 @st.dialog("Admin Təsdiqi")
@@ -502,6 +522,14 @@ def render_table_order():
     c1, c2 = st.columns([1.5, 3])
     with c1:
         st.info("Masa Sifarişi")
+        
+        # PERSISTENT CUSTOMER CHECK (DB -> SESSION)
+        # If DB has customer but session doesn't, load it
+        db_cust_id = tbl.get('active_customer_id')
+        if db_cust_id and not st.session_state.current_customer_tb:
+             r = run_query("SELECT * FROM customers WHERE card_id=:id", {"id":db_cust_id})
+             if not r.empty: st.session_state.current_customer_tb = r.iloc[0].to_dict()
+
         with st.form("sc_tb", clear_on_submit=True):
             ci, cb = st.columns([3,1]); qv = ci.text_input("Müştəri", label_visibility="collapsed", placeholder="Skan..."); 
             if cb.form_submit_button("🔍") or qv:
@@ -548,7 +576,11 @@ def render_table_order():
         col_s, col_p = st.columns(2)
         if col_s.button("🔥 MƏTBƏXƏ GÖNDƏR", key="save_tbl", use_container_width=True):
             for x in st.session_state.cart_table: x['status'] = 'sent'
-            run_action("UPDATE tables SET is_occupied=TRUE, items=:i, total=:t WHERE id=:id", {"i":json.dumps(st.session_state.cart_table), "t":final_total, "id":tbl['id']})
+            # Save Active Customer ID too
+            act_cust_id = st.session_state.current_customer_tb['card_id'] if st.session_state.current_customer_tb else None
+            
+            run_action("UPDATE tables SET is_occupied=TRUE, items=:i, total=:t, active_customer_id=:c WHERE id=:id", 
+                       {"i":json.dumps(st.session_state.cart_table), "t":final_total, "c":act_cust_id, "id":tbl['id']})
             st.success("Göndərildi!"); time.sleep(0.5); st.session_state.selected_table=None; st.rerun()
         
         pm = st.radio("Metod", ["Nəğd", "Kart"], horizontal=True, key="pm_tb")
@@ -568,8 +600,12 @@ def render_table_order():
                         new_stars_balance = total_pool - (free_count * 10)
                         s.execute(text("UPDATE customers SET stars=:s WHERE card_id=:id"), {"s":new_stars_balance, "id":cust_id})
                     s.commit()
-                run_action("UPDATE tables SET is_occupied=FALSE, items=NULL, total=0 WHERE id=:id", {"id":tbl['id']})
-                st.session_state.last_sale = {"id": int(time.time()), "items": istr, "total": final_total, "subtotal": raw_total, "discount": raw_total - final_total, "date": get_baku_now().strftime("%Y-%m-%d %H:%M"), "cashier": st.session_state.user, "customer_email": cust_email, "service_charge": serv_chg}
+                # Clear everything including customer
+                run_action("UPDATE tables SET is_occupied=FALSE, items=NULL, total=0, active_customer_id=NULL WHERE id=:id", {"id":tbl['id']})
+                st.session_state.last_sale = {
+                    "id": int(time.time()), "items": istr, "total": final_total, "subtotal": raw_total, "discount": raw_total - final_total,
+                    "date": get_baku_now().strftime("%Y-%m-%d %H:%M"), "cashier": st.session_state.user, "customer_email": cust_email, "service_charge": serv_chg
+                }
                 st.session_state.cart_table=[]; st.session_state.selected_table=None; st.rerun()
             except Exception as e: st.error(str(e))
     with c2: render_menu_grid(st.session_state.cart_table, "tb")
@@ -667,7 +703,7 @@ else:
         tabs = st.tabs(["🏃‍♂️ AL-APAR", "🍽️ MASALAR", "📦 Anbar", "📜 Resept", "Analitika", "CRM", "Menyu", "⚙️ Ayarlar", "Admin", "QR"])
         with tabs[0]: render_takeaway()
         with tabs[1]: render_tables_main()
-        with tabs[2]: # Anbar (DYNAMIC TABS)
+        with tabs[2]: # Anbar
             st.subheader("📦 Anbar")
             cats = run_query("SELECT DISTINCT category FROM ingredients ORDER BY category")['category'].tolist()
             if not cats: cats = ["Ümumi"]
