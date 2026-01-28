@@ -19,10 +19,10 @@ import json
 from collections import Counter
 
 # ==========================================
-# === IRONWAVES POS - V3.7 STABLE (DB & TRANSFER) ===
+# === IRONWAVES POS - V3.7.1 (TRANSFER FIX) ===
 # ==========================================
 
-VERSION = "v3.7 STABLE (DB & Transfer Fix)"
+VERSION = "v3.7.1 STABLE (Transfer Fix)"
 
 # --- INFRA ---
 RESEND_API_KEY = os.environ.get("RESEND_API_KEY")
@@ -54,7 +54,7 @@ st.markdown("""
         box-shadow: 0 4px 12px rgba(255, 107, 53, 0.4);
     }
     
-    /* COMPACT PILLS (CATEGORY) */
+    /* COMPACT PILLS */
     div[data-testid="stRadio"] > label { display: none !important; }
     div[data-testid="stRadio"] div[role="radiogroup"] { flex-direction: row; flex-wrap: wrap; gap: 8px; }
     div[data-testid="stRadio"] label[data-baseweb="radio"] { 
@@ -117,7 +117,6 @@ def ensure_schema():
         s.execute(text("CREATE TABLE IF NOT EXISTS expenses (id SERIAL PRIMARY KEY, title TEXT, amount DECIMAL(10,2), category TEXT, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP);"))
         s.execute(text("CREATE TABLE IF NOT EXISTS coupon_templates (id SERIAL PRIMARY KEY, name TEXT, percent INTEGER, days_valid INTEGER, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP);"))
         
-        # SCHEMA UPDATES (V3.7)
         try: s.execute(text("ALTER TABLE sales ADD COLUMN IF NOT EXISTS customer_card_id TEXT;"))
         except: pass
         try: s.execute(text("ALTER TABLE tables ADD COLUMN IF NOT EXISTS active_customer_id TEXT;"))
@@ -239,7 +238,7 @@ def calculate_smart_total(cart, customer=None, is_table=False):
             
     return total, discounted_total, coffee_discount_rate, free_coffees_to_apply, total_star_pool, service_charge
 
-# --- 1. MÜŞTƏRİ PORTALI (FULL LEGAL TEXT) ---
+# --- 1. MÜŞTƏRİ PORTALI ---
 qp = st.query_params
 if "id" in qp:
     card_id = qp["id"]
@@ -358,8 +357,17 @@ def show_transfer_dialog(current_table_id):
     if not tables.empty:
         target = st.selectbox("Hara köçürülsün?", tables['label'].tolist())
         if st.button("Təsdiqlə"):
-            target_row = tables[tables['label']==target].iloc[0]
-            target_id = int(target_row['id'])
+            # --- AUTO-SAVE LOGIC START ---
+            if 'selected_table' in st.session_state and st.session_state.selected_table and st.session_state.selected_table['id'] == current_table_id:
+                # Force Save session to DB first
+                raw_total, final_total, _, _, _, _ = calculate_smart_total(st.session_state.cart_table, st.session_state.current_customer_tb, is_table=True)
+                cust_id = st.session_state.current_customer_tb['card_id'] if st.session_state.current_customer_tb else None
+                run_action("UPDATE tables SET is_occupied=TRUE, items=:i, total=:t, active_customer_id=:c WHERE id=:id", 
+                           {"i":json.dumps(st.session_state.cart_table), "t":final_total, "c":cust_id, "id":current_table_id})
+            # --- AUTO-SAVE LOGIC END ---
+
+            # Now perform transfer
+            target_id = int(tables[tables['label']==target].iloc[0]['id'])
             
             curr = run_query("SELECT items, total, active_customer_id FROM tables WHERE id=:id", {"id":int(current_table_id)}).iloc[0]
             targ = run_query("SELECT items, total, active_customer_id FROM tables WHERE id=:id", {"id":target_id}).iloc[0]
@@ -368,9 +376,6 @@ def show_transfer_dialog(current_table_id):
             t_items = json.loads(targ['items']) if targ['items'] else []
             new_items = t_items + c_items
             new_total = float(curr['total'] or 0) + float(targ['total'] or 0)
-            
-            # CUSTOMER TRANSFER LOGIC
-            # If target is occupied, keep target's customer. If empty, move current customer.
             final_cust_id = targ['active_customer_id'] if targ['active_customer_id'] else curr['active_customer_id']
             
             run_action("UPDATE tables SET is_occupied=TRUE, items=:i, total=:t, active_customer_id=:c WHERE id=:id", 
@@ -524,7 +529,6 @@ def render_table_order():
         st.info("Masa Sifarişi")
         
         # PERSISTENT CUSTOMER CHECK (DB -> SESSION)
-        # If DB has customer but session doesn't, load it
         db_cust_id = tbl.get('active_customer_id')
         if db_cust_id and not st.session_state.current_customer_tb:
              r = run_query("SELECT * FROM customers WHERE card_id=:id", {"id":db_cust_id})
@@ -576,7 +580,6 @@ def render_table_order():
         col_s, col_p = st.columns(2)
         if col_s.button("🔥 MƏTBƏXƏ GÖNDƏR", key="save_tbl", use_container_width=True):
             for x in st.session_state.cart_table: x['status'] = 'sent'
-            # Save Active Customer ID too
             act_cust_id = st.session_state.current_customer_tb['card_id'] if st.session_state.current_customer_tb else None
             
             run_action("UPDATE tables SET is_occupied=TRUE, items=:i, total=:t, active_customer_id=:c WHERE id=:id", 
@@ -600,7 +603,6 @@ def render_table_order():
                         new_stars_balance = total_pool - (free_count * 10)
                         s.execute(text("UPDATE customers SET stars=:s WHERE card_id=:id"), {"s":new_stars_balance, "id":cust_id})
                     s.commit()
-                # Clear everything including customer
                 run_action("UPDATE tables SET is_occupied=FALSE, items=NULL, total=0, active_customer_id=NULL WHERE id=:id", {"id":tbl['id']})
                 st.session_state.last_sale = {
                     "id": int(time.time()), "items": istr, "total": final_total, "subtotal": raw_total, "discount": raw_total - final_total,
