@@ -19,11 +19,11 @@ import json
 from collections import Counter
 
 # ==========================================
-# === EMALATKHANA POS - V5.0 (MULTI-LANGUAGE) ===
+# === EMALATKHANA POS - V5.1 (FINAL POLISH) ===
 # ==========================================
 
-VERSION = "v5.0 ENTERPRISE (Multi-Lang)"
-BRAND_NAME = "Emalatkhana Daily Coffee and Drinks"
+VERSION = "v5.1 ENTERPRISE (Full)"
+BRAND_NAME = "Emalatkhana Daily Coffee"
 
 # --- INFRA ---
 RESEND_API_KEY = os.environ.get("RESEND_API_KEY")
@@ -36,7 +36,7 @@ st.set_page_config(page_title=BRAND_NAME, page_icon="☕", layout="wide", initia
 
 # --- INIT STATE ---
 if 'logged_in' not in st.session_state: st.session_state.logged_in = False
-if 'language' not in st.session_state: st.session_state.language = 'az' # Default Language
+if 'language' not in st.session_state: st.session_state.language = 'az'
 if 'cart_takeaway' not in st.session_state: st.session_state.cart_takeaway = []
 if 'cart_table' not in st.session_state: st.session_state.cart_table = []
 if 'current_customer_ta' not in st.session_state: st.session_state.current_customer_ta = None
@@ -47,6 +47,7 @@ if 'selected_recipe_product' not in st.session_state: st.session_state.selected_
 
 # --- TRANSLATION DICTIONARY ---
 T = {
+    # Login & General
     "login_staff": {"az": "İŞÇİ GİRİŞİ", "en": "STAFF LOGIN"},
     "login_admin": {"az": "İDARƏETMƏ", "en": "MANAGEMENT"},
     "username": {"az": "İstifadəçi", "en": "Username"},
@@ -54,6 +55,28 @@ T = {
     "login_btn": {"az": "Daxil Ol", "en": "Log In"},
     "logout": {"az": "Çıxış", "en": "Logout"},
     "refresh": {"az": "Yenilə", "en": "Refresh"},
+    
+    # Customer Portal
+    "cust_welcome": {"az": "🎉 Xoş gəlmisiniz!", "en": "🎉 Welcome!"},
+    "cust_complete": {"az": "Qeydiyyatı tamamlayın", "en": "Complete Registration"},
+    "dob": {"az": "Doğum Tarixi", "en": "Date of Birth"},
+    "agree_title": {"az": "📜 İstifadəçi Razılaşması", "en": "📜 User Agreement"},
+    "read_terms": {"az": "Qaydaları Oxumaq üçün Toxunun", "en": "Tap to Read Terms"},
+    "agree_check": {"az": "Şərtləri qəbul edirəm", "en": "I accept the terms"},
+    "submit": {"az": "Təsdiqlə", "en": "Submit"},
+    "balance": {"az": "BALANS", "en": "BALANCE"},
+    "feedback_title": {"az": "🌟 Fikriniz önəmlidir!", "en": "🌟 Your feedback matters!"},
+    "rate_us": {"az": "Xidmətimizi qiymətləndirin:", "en": "Rate our service:"},
+    "comment_ph": {"az": "Kofe necə idi?", "en": "How was the coffee?"},
+    "send": {"az": "Göndər", "en": "Send"},
+    "feedback_thanks": {"az": "Təşəkkürlər! Rəyiniz qəbul olundu. 💚", "en": "Thanks! Feedback received. 💚"},
+    "feedback_done": {"az": "Rəyiniz üçün təşəkkürlər! 💚", "en": "Thanks for your feedback! 💚"},
+    "terms_text": {
+        "az": """**1. Ümumi Müddəalar**\nBu proqram "Emalatkhana" sistemi vasitəsilə idarə olunur.\n\n**2. Bonuslar**\nToplanılan ulduzlar nağd pula çevrilə bilməz. Endirimlər yalnız kofe məhsullarına şamil edilir.\n\n**3. Məxfilik**\nSizin məlumatlarınız (Email, Doğum tarixi) üçüncü tərəflə paylaşılmır.""",
+        "en": """**1. General**\nThis program is managed by "Emalatkhana" system.\n\n**2. Bonuses**\nCollected stars cannot be exchanged for cash. Discounts apply only to coffee products.\n\n**3. Privacy**\nYour data (Email, DOB) is not shared with third parties."""
+    },
+
+    # POS Tabs
     "tab_takeaway": {"az": "🏃‍♂️ AL-APAR", "en": "🏃‍♂️ TAKEAWAY"},
     "tab_tables": {"az": "🍽️ MASALAR", "en": "🍽️ TABLES"},
     "tab_stock": {"az": "📦 Anbar", "en": "📦 Stock"},
@@ -62,6 +85,8 @@ T = {
     "tab_crm": {"az": "👥 CRM", "en": "👥 CRM"},
     "tab_menu": {"az": "Menyu", "en": "Menu"},
     "tab_settings": {"az": "⚙️ Ayarlar", "en": "⚙️ Settings"},
+    
+    # Actions
     "pay_btn": {"az": "✅ ÖDƏNİŞ ET", "en": "✅ PAY NOW"},
     "send_kitchen": {"az": "🔥 MƏTBƏXƏ GÖNDƏR", "en": "🔥 SEND TO KITCHEN"},
     "print_check": {"az": "🖨️ Hesabı Gətir", "en": "🖨️ Print Check"},
@@ -76,11 +101,6 @@ T = {
     "save": {"az": "Yadda Saxla", "en": "Save"},
     "error_pin": {"az": "Yanlış PIN!", "en": "Wrong PIN!"},
     "error_auth": {"az": "Səhv Məlumat!", "en": "Invalid Credentials!"},
-    "welcome": {"az": "Xoş gəlmisiniz", "en": "Welcome"},
-    "feedback_title": {"az": "🌟 Fikriniz önəmlidir!", "en": "🌟 Your feedback matters!"},
-    "feedback_thanks": {"az": "Təşəkkürlər! Rəyiniz qəbul olundu. 💚", "en": "Thanks! Feedback received. 💚"},
-    "item_name_az": {"az": "Ad (AZ)", "en": "Name (AZ)"},
-    "item_name_en": {"az": "Ad (EN)", "en": "Name (EN)"}
 }
 
 def txt(key):
@@ -112,6 +132,8 @@ st.markdown("""
         background: #2E7D32; color: white; border-color: #2E7D32;
     }
 
+    div.stButton > button { border-radius: 12px !important; height: 60px !important; font-weight: 700 !important; box-shadow: 0 4px 0 rgba(0,0,0,0.1) !important; transition: all 0.1s !important; }
+    div.stButton > button:active { transform: translateY(3px) !important; box-shadow: none !important; }
     div.stButton > button[kind="primary"] { background: linear-gradient(135deg, #FF6B35, #FF8C00) !important; color: white !important; }
     
     .small-btn button { height: 35px !important; min-height: 35px !important; font-size: 14px !important; padding: 0 !important; }
@@ -184,7 +206,6 @@ def ensure_schema():
         except: pass
         try: s.execute(text("ALTER TABLE customers ADD COLUMN IF NOT EXISTS last_feedback_star_count INTEGER DEFAULT 0;"))
         except: pass
-        # V5.0 NEW: English Name Column
         try: s.execute(text("ALTER TABLE menu ADD COLUMN IF NOT EXISTS item_name_en TEXT;"))
         except: pass
         
@@ -253,7 +274,7 @@ def send_email(to_email, subject, body):
     if not RESEND_API_KEY: return "API_KEY_MISSING"
     url = "https://api.resend.com/emails"
     headers = {"Authorization": f"Bearer {RESEND_API_KEY}", "Content-Type": "application/json"}
-    payload = {"from": f"{BRAND_NAME} <{DEFAULT_SENDER_EMAIL}>", "to": [to_email], "subject": subject, "html": body}
+    payload = {"from": f"Emalatxana <{DEFAULT_SENDER_EMAIL}>", "to": [to_email], "subject": subject, "html": body}
     try: 
         r = requests.post(url, json=payload, headers=headers, timeout=5)
         if r.status_code == 200: return "OK"
@@ -908,6 +929,60 @@ if not st.session_state.logged_in:
         lang = st.selectbox("Language / Dil", ["🇦🇿 AZ", "🇬🇧 EN"], index=0 if st.session_state.language=='az' else 1)
         st.session_state.language = 'az' if lang == "🇦🇿 AZ" else 'en'
         
+        # 1. CUSTOMER PORTAL LOGIC (INSIDE LOGGED OUT STATE)
+        qp = st.query_params
+        if "id" in qp:
+            card_id = qp["id"]
+            st.markdown(f"<h2 style='text-align:center; color:#2E7D32; font-weight:bold;'>{BRAND_NAME}</h2>", unsafe_allow_html=True)
+            
+            user_df = run_query("SELECT * FROM customers WHERE card_id = :id", {"id": card_id})
+            if not user_df.empty:
+                user = user_df.iloc[0]
+                st.markdown(f"<div class='motivation-text'>{txt('cust_welcome')}</div>", unsafe_allow_html=True)
+
+                if not user['is_active']:
+                    st.info(txt("cust_complete"))
+                    with st.form("act_form"):
+                        em = st.text_input("Email"); dob = st.date_input(txt("dob"), min_value=datetime.date(1950,1,1))
+                        st.markdown(f"### {txt('agree_title')}")
+                        with st.expander(txt("read_terms")):
+                            st.markdown(txt("terms_text"))
+                        agree = st.checkbox(txt("agree_check"))
+                        if st.form_submit_button(txt("submit")):
+                            if agree:
+                                run_action("UPDATE customers SET email=:e, birth_date=:b, is_active=TRUE WHERE card_id=:i", {"e":em, "b":dob, "i":card_id})
+                                st.success("OK!"); st.rerun()
+                            else: st.error("!")
+                    st.stop()
+                
+                st.markdown(f"<div class='cust-card'><h4 style='margin:0; color:#888;'>{txt('balance')}</h4><h1 style='color:#2E7D32; font-size: 48px; margin:0;'>{user['stars']} / 10</h1><p style='color:#555;'>ID: {card_id}</p></div>", unsafe_allow_html=True)
+                
+                # Feedback Logic
+                last_fb = user.get('last_feedback_star_count', 0) or 0
+                if user['stars'] > 0 and user['stars'] > last_fb:
+                    st.divider()
+                    st.markdown(f"#### {txt('feedback_title')}")
+                    with st.form("fb_form"):
+                        rating = st.radio(txt("rate_us"), ["⭐️", "⭐️⭐️", "⭐️⭐️⭐️", "⭐️⭐️⭐️⭐️", "⭐️⭐️⭐️⭐️⭐️"], horizontal=True, index=4)
+                        comment = st.text_area("Rəy", placeholder=txt("comment_ph"))
+                        if st.form_submit_button(txt("send")):
+                            r_val = len(rating) // 2 
+                            if rating == "⭐️": r_val = 1
+                            elif rating == "⭐️⭐️": r_val = 2
+                            elif rating == "⭐️⭐️⭐️": r_val = 3
+                            elif rating == "⭐️⭐️⭐️⭐️": r_val = 4
+                            elif rating == "⭐️⭐️⭐️⭐️⭐️": r_val = 5
+                            run_action("INSERT INTO feedbacks (card_id, rating, comment, created_at) VALUES (:c, :r, :m, :t)", {"c":card_id, "r":r_val, "m":comment, "t":get_baku_now()})
+                            run_action("UPDATE customers SET last_feedback_star_count = :s WHERE card_id = :c", {"s":user['stars'], "c":card_id})
+                            st.success(txt("feedback_thanks")); time.sleep(2); st.rerun()
+                elif user['stars'] > 0 and user['stars'] == last_fb:
+                    st.markdown(f"<p style='text-align:center; color:#2E7D32;'><i>{txt('feedback_done')}</i></p>", unsafe_allow_html=True)
+
+                st.divider()
+                if st.button(txt("logout")): st.query_params.clear(); st.rerun()
+                st.stop()
+
+        # 2. LOGIN TABS
         st.markdown(f"<h1 style='text-align:center; color:#2E7D32;'>{BRAND_NAME}</h1><h5 style='text-align:center; color:#777;'>{VERSION}</h5>", unsafe_allow_html=True)
         tabs = st.tabs([txt("login_staff"), txt("login_admin")])
         with tabs[0]:
@@ -915,7 +990,7 @@ if not st.session_state.logged_in:
                 pin = st.text_input("PIN", type="password"); 
                 if st.form_submit_button(txt("login_btn"), use_container_width=True):
                     is_blocked, mins = check_login_block(pin) 
-                    if is_blocked: st.error(f"Çox sayda uğursuz cəhd. {mins} dəqiqə gözləyin."); st.stop()
+                    if is_blocked: st.error(f"BLOCKED! {mins} min."); st.stop()
                     
                     udf = run_query("SELECT * FROM users WHERE role='staff'")
                     found = False
@@ -935,7 +1010,7 @@ if not st.session_state.logged_in:
                 u = st.text_input(txt("username")); p = st.text_input(txt("password"), type="password")
                 if st.form_submit_button(txt("login_btn"), use_container_width=True):
                     is_blocked, mins = check_login_block(u)
-                    if is_blocked: st.error(f"Hesab bloklanıb. {mins} dəqiqə gözləyin."); st.stop()
+                    if is_blocked: st.error(f"BLOCKED! {mins} min."); st.stop()
 
                     udf = run_query("SELECT * FROM users WHERE LOWER(username)=LOWER(:u) AND role IN ('admin', 'manager')", {"u":u})
                     if not udf.empty:
