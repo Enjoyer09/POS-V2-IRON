@@ -19,10 +19,10 @@ import json
 from collections import Counter
 
 # ==========================================
-# === EMALATKHANA POS - V4.9 (DEMO / TEST) ===
+# === EMALATKHANA POS - V4.9.1 (FIXED BACKUP) ===
 # ==========================================
 
-VERSION = "v4.9 DEMO (Test Mode)"
+VERSION = "v4.9.1 DEMO (Fixed)"
 BRAND_NAME = "Emalatkhana (TEST REJİMİ)" # Vizual xəbərdarlıq
 
 # --- INFRA ---
@@ -218,7 +218,7 @@ def send_email(to_email, subject, body):
     if not RESEND_API_KEY: return "API_KEY_MISSING"
     url = "https://api.resend.com/emails"
     headers = {"Authorization": f"Bearer {RESEND_API_KEY}", "Content-Type": "application/json"}
-    payload = {"from": f"Emalatxana <{DEFAULT_SENDER_EMAIL}>", "to": [to_email], "subject": subject, "html": body}
+    payload = {"from": f"{BRAND_NAME} <{DEFAULT_SENDER_EMAIL}>", "to": [to_email], "subject": subject, "html": body}
     try: 
         r = requests.post(url, json=payload, headers=headers, timeout=5)
         if r.status_code == 200: return "OK"
@@ -227,6 +227,11 @@ def send_email(to_email, subject, body):
 def format_qty(val):
     if val % 1 == 0: return int(val)
     return val
+def clean_df_for_excel(df):
+    for col in df.columns:
+        if pd.api.types.is_datetime64_any_dtype(df[col]):
+            df[col] = df[col].dt.tz_localize(None)
+    return df
 
 # --- LOGIN SECURITY HELPERS ---
 def check_login_block(username):
@@ -699,200 +704,11 @@ def render_analytics(is_admin=False, is_manager=False):
             voids = run_query("SELECT * FROM void_logs ORDER BY created_at DESC")
             st.dataframe(voids, use_container_width=True)
 
-@st.dialog("Çek Əməliyyatları")
-def show_receipt_dialog():
-    if 'last_sale' in st.session_state and st.session_state.last_sale:
-        sale = st.session_state.last_sale
-        st.markdown(generate_receipt_html(sale), unsafe_allow_html=True)
-        st.divider()
-        c1, c2 = st.columns(2)
-        with c1:
-            components.html("""<script>function printPage() { window.parent.print(); }</script><button onclick="printPage()" style="width:100%; height:50px; background: linear-gradient(135deg, #2c3e50, #4ca1af); color:white; border:none; border-radius:10px; font-family:sans-serif; font-size:16px; font-weight:bold; cursor:pointer; box-shadow: 0 4px 0 rgba(0,0,0,0.1);">🖨️ ÇAP ET (Avto)</button>""", height=70)
-        with c2:
-            if sale.get('customer_email'):
-                if st.button("📧 Emailə Göndər", type="primary", use_container_width=True):
-                    res = send_email(sale['customer_email'], f"Çek №{sale['id']}", generate_receipt_html(sale))
-                    if res == "OK": st.toast("✅ Email uğurla göndərildi!", icon="📧")
-                    else: st.toast(f"❌ {res}", icon="⚠️")
-            else: st.button("📧 Email Yoxdur", disabled=True, use_container_width=True)
-
-@st.dialog("Masa Transferi")
-def show_transfer_dialog(current_table_id):
-    tables = run_query("SELECT id, label, is_occupied, active_customer_id FROM tables WHERE id != :id ORDER BY id", {"id":current_table_id})
-    if not tables.empty:
-        target = st.selectbox("Hara köçürülsün?", tables['label'].tolist())
-        if st.button("Təsdiqlə"):
-            if 'selected_table' in st.session_state and st.session_state.selected_table and st.session_state.selected_table['id'] == current_table_id:
-                raw_total, final_total, _, _, _, _ = calculate_smart_total(st.session_state.cart_table, st.session_state.current_customer_tb, is_table=True)
-                cust_id = st.session_state.current_customer_tb['card_id'] if st.session_state.current_customer_tb else None
-                run_action("UPDATE tables SET is_occupied=TRUE, items=:i, total=:t, active_customer_id=:c WHERE id=:id", 
-                           {"i":json.dumps(st.session_state.cart_table), "t":final_total, "c":cust_id, "id":current_table_id})
-            
-            target_id = int(tables[tables['label']==target].iloc[0]['id'])
-            curr = run_query("SELECT items, total, active_customer_id FROM tables WHERE id=:id", {"id":int(current_table_id)}).iloc[0]
-            targ = run_query("SELECT items, total, active_customer_id FROM tables WHERE id=:id", {"id":target_id}).iloc[0]
-            c_items = json.loads(curr['items']) if curr['items'] else []
-            t_items = json.loads(targ['items']) if targ['items'] else []
-            new_items = t_items + c_items
-            new_total = float(curr['total'] or 0) + float(targ['total'] or 0)
-            final_cust_id = targ['active_customer_id'] if targ['active_customer_id'] else curr['active_customer_id']
-            run_action("UPDATE tables SET is_occupied=TRUE, items=:i, total=:t, active_customer_id=:c WHERE id=:id", 
-                       {"i":json.dumps(new_items), "t":new_total, "c":final_cust_id, "id":target_id})
-            run_action("UPDATE tables SET is_occupied=FALSE, items=NULL, total=0, active_customer_id=NULL WHERE id=:id", {"id":int(current_table_id)})
-            st.session_state.selected_table = None; st.rerun()
-
-@st.dialog("Ara Hesab (Pre-Check)")
-def show_pre_check_dialog(raw_t, final_t, serv, items, label, date):
-    html = generate_receipt_html({
-        "id": "PRE-CHECK",
-        "date": date,
-        "cashier": st.session_state.user,
-        "items": f"[{label}] " + ", ".join([f"{x['item_name']} x{x['qty']}" for x in items]),
-        "subtotal": raw_t,
-        "total": final_t,
-        "discount": raw_t - final_t + serv,
-        "service_charge": serv
-    })
-    st.markdown(html, unsafe_allow_html=True)
-    components.html("""<script>function printPage() { window.parent.print(); }</script><button onclick="printPage()" style="width:100%; height:50px; background: linear-gradient(135deg, #2c3e50, #4ca1af); color:white; border:none; border-radius:10px; font-family:sans-serif; font-size:16px; font-weight:bold; cursor:pointer; box-shadow: 0 4px 0 rgba(0,0,0,0.1);">🖨️ ÇAP ET</button>""", height=70)
-
-@st.dialog("Ödəniş")
-def show_payment_dialog(table_id):
-    st.markdown("### Ödəniş Seçimi")
-    mode = st.radio("Metod", ["Tam Ödəniş", "Hissəli (Split)"], horizontal=True)
-    
-    if mode == "Tam Ödəniş":
-        pm = st.radio("Növ", ["Nəğd", "Kart"], horizontal=True)
-        if st.button("✅ Ödənişi Tamamla", type="primary", use_container_width=True):
-            raw_total, final_total, disc_rate, free_count, total_pool, serv_chg = calculate_smart_total(st.session_state.cart_table, st.session_state.current_customer_tb, is_table=True)
-            istr = f"[{st.session_state.selected_table['label']}] " + ", ".join([f"{x['item_name']} x{x['qty']}" for x in st.session_state.cart_table])
-            cust_id = st.session_state.current_customer_tb['card_id'] if st.session_state.current_customer_tb else None
-            cust_email = st.session_state.current_customer_tb.get('email') if st.session_state.current_customer_tb else None
-            
-            run_action("INSERT INTO sales (items, total, payment_method, cashier, created_at, customer_card_id) VALUES (:i,:t,:p,:c,:time, :cid)", 
-                       {"i":istr,"t":final_total,"p":("Cash" if pm=="Nəğd" else "Card"),"c":st.session_state.user, "time":get_baku_now(), "cid":cust_id})
-            
-            with conn.session as s:
-                for it in st.session_state.cart_table:
-                    rs = s.execute(text("SELECT ingredient_name, quantity_required FROM recipes WHERE menu_item_name=:m"), {"m":it['item_name']}).fetchall()
-                    for r in rs: s.execute(text("UPDATE ingredients SET stock_qty=stock_qty-:q WHERE name=:n"), {"q":float(r[1])*it['qty'], "n":r[0]})
-                if st.session_state.current_customer_tb:
-                    new_stars_balance = total_pool - (free_count * 10)
-                    s.execute(text("UPDATE customers SET stars=:s WHERE card_id=:id"), {"s":new_stars_balance, "id":cust_id})
-                s.commit()
-            
-            run_action("UPDATE tables SET is_occupied=FALSE, items=NULL, total=0, active_customer_id=NULL WHERE id=:id", {"id":table_id})
-            st.session_state.last_sale = {"id": int(time.time()), "items": istr, "total": final_total, "subtotal": raw_total, "discount": raw_total - final_total, "date": get_baku_now().strftime("%Y-%m-%d %H:%M"), "cashier": st.session_state.user, "customer_email": cust_email, "service_charge": serv_chg}
-            st.session_state.cart_table=[]; st.session_state.selected_table=None; st.rerun()
-
-    else: 
-        st.info("Siyahıdan ödəniləcək məhsulların sayını seçin.")
-        split_data = []
-        for i, item in enumerate(st.session_state.cart_table):
-            split_data.append({"Məhsul": item['item_name'], "Qiymət": item['price'], "Cəmi Say": item['qty'], "Ödəniləcək Say": 0, "_idx": i})
-        df = pd.DataFrame(split_data)
-        edited_df = st.data_editor(df, column_config={"Məhsul": st.column_config.TextColumn(disabled=True), "Qiymət": st.column_config.NumberColumn(disabled=True), "Cəmi Say": st.column_config.NumberColumn(disabled=True), "Ödəniləcək Say": st.column_config.NumberColumn(min_value=0, max_value=100, step=1), "_idx": None}, hide_index=True, use_container_width=True)
-        
-        selected_cart = []
-        remaining_cart = []
-        
-        for index, row in edited_df.iterrows():
-            orig_idx = row['_idx']
-            orig_item = st.session_state.cart_table[orig_idx]
-            pay_qty = int(row['Ödəniləcək Say'])
-            if pay_qty > 0:
-                item_copy = orig_item.copy(); item_copy['qty'] = pay_qty
-                selected_cart.append(item_copy)
-            rem_qty = orig_item['qty'] - pay_qty
-            if rem_qty > 0:
-                item_rem = orig_item.copy(); item_rem['qty'] = rem_qty
-                remaining_cart.append(item_rem)
-
-        if selected_cart:
-            raw_t, final_t, _, free_cnt, pool, serv = calculate_smart_total(selected_cart, st.session_state.current_customer_tb, is_table=True)
-            st.divider()
-            st.markdown(f"**Ödəniləcək Məbləğ:** {final_t:.2f} ₼")
-            pm_split = st.radio("Ödəniş", ["Nəğd", "Kart"], horizontal=True, key="pm_split")
-            
-            if st.button(f"Hissəli Ödə ({final_t:.2f} ₼)"):
-                istr = f"[{st.session_state.selected_table['label']} - Split] " + ", ".join([f"{x['item_name']} x{x['qty']}" for x in selected_cart])
-                cust_id = st.session_state.current_customer_tb['card_id'] if st.session_state.current_customer_tb else None
-                run_action("INSERT INTO sales (items, total, payment_method, cashier, created_at, customer_card_id) VALUES (:i,:t,:p,:c,:time, :cid)", 
-                           {"i":istr,"t":final_t,"p":("Cash" if pm_split=="Nəğd" else "Card"),"c":st.session_state.user, "time":get_baku_now(), "cid":cust_id})
-                
-                with conn.session as s:
-                    for it in selected_cart:
-                        rs = s.execute(text("SELECT ingredient_name, quantity_required FROM recipes WHERE menu_item_name=:m"), {"m":it['item_name']}).fetchall()
-                        for r in rs: s.execute(text("UPDATE ingredients SET stock_qty=stock_qty-:q WHERE name=:n"), {"q":float(r[1])*it['qty'], "n":r[0]})
-                    if st.session_state.current_customer_tb:
-                        old_stars = st.session_state.current_customer_tb.get('stars', 0)
-                        paid_coffee_count = sum([x['qty'] for x in selected_cart if x.get('is_coffee')])
-                        new_bal = (old_stars + paid_coffee_count) - (free_cnt * 10)
-                        s.execute(text("UPDATE customers SET stars=:s WHERE card_id=:id"), {"s":new_bal, "id":cust_id})
-                    s.commit()
-
-                if not remaining_cart:
-                    run_action("UPDATE tables SET is_occupied=FALSE, items=NULL, total=0, active_customer_id=NULL WHERE id=:id", {"id":table_id})
-                    st.session_state.selected_table = None
-                else:
-                    _, rem_total, _, _, _, _ = calculate_smart_total(remaining_cart, st.session_state.current_customer_tb, is_table=True)
-                    run_action("UPDATE tables SET items=:i, total=:t WHERE id=:id", {"i":json.dumps(remaining_cart), "t":rem_total, "id":table_id})
-                    st.session_state.cart_table = remaining_cart
-                
-                st.session_state.last_sale = {"id": int(time.time()), "items": istr, "total": final_t, "subtotal": raw_t, "discount": raw_t - final_t, "date": get_baku_now().strftime("%Y-%m-%d %H:%M"), "cashier": st.session_state.user, "customer_email": None, "service_charge": serv}
-                st.rerun()
-
 # --- MAIN ---
 if not st.session_state.logged_in:
-    # 1. MÜŞTƏRİ PORTALI (LOGGED OUT)
-    qp = st.query_params
-    if "id" in qp:
-        card_id = qp["id"]
-        c1, c2, c3 = st.columns([1,2,1])
-        with c2: 
-            st.markdown(f"<h2 style='text-align:center; color:#2E7D32; font-weight:bold;'>{BRAND_NAME}</h2>", unsafe_allow_html=True)
-        
-        user_df = run_query("SELECT * FROM customers WHERE card_id = :id", {"id": card_id})
-        if not user_df.empty:
-            user = user_df.iloc[0]
-            
-            quotes = ["Bu gün əla görünürsən! ☕", "Uğur bir fincan kofe ilə başlayır.", "Gülüşün günümüzü işıqlandırır."]
-            st.markdown(f"<div class='motivation-text'>{random.choice(quotes)}</div>", unsafe_allow_html=True)
-
-            if not user['is_active']:
-                st.info("🎉 Xoş gəlmisiniz!")
-                with st.form("act_form"):
-                    em = st.text_input("Email"); dob = st.date_input("Doğum Tarixi", min_value=datetime.date(1950,1,1))
-                    if st.form_submit_button("Tamamla"):
-                        run_action("UPDATE customers SET email=:e, birth_date=:b, is_active=TRUE WHERE card_id=:i", {"e":em, "b":dob, "i":card_id})
-                        st.success("Hazırdır!"); st.rerun()
-                st.stop()
-            
-            st.markdown(f"<div class='cust-card'><h4 style='margin:0; color:#888;'>BALANS</h4><h1 style='color:#2E7D32; font-size: 48px; margin:0;'>{user['stars']} / 10</h1></div>", unsafe_allow_html=True)
-            
-            # Feedback Logic
-            last_fb = user.get('last_feedback_star_count', 0) or 0
-            if user['stars'] > 0 and user['stars'] > last_fb:
-                st.divider()
-                st.markdown("#### 🌟 Fikriniz önəmlidir!")
-                with st.form("fb_form"):
-                    rating = st.radio("Xidmətimizi qiymətləndirin:", ["⭐️", "⭐️⭐️", "⭐️⭐️⭐️", "⭐️⭐️⭐️⭐️", "⭐️⭐️⭐️⭐️⭐️"], horizontal=True, index=4)
-                    comment = st.text_area("Rəyiniz", placeholder="Kofe necə idi?")
-                    if st.form_submit_button("Göndər"):
-                        r_val = len(rating) // 2 
-                        run_action("INSERT INTO feedbacks (card_id, rating, comment, created_at) VALUES (:c, :r, :m, :t)", {"c":card_id, "r":r_val, "m":comment, "t":get_baku_now()})
-                        run_action("UPDATE customers SET last_feedback_star_count = :s WHERE card_id = :c", {"s":user['stars'], "c":card_id})
-                        st.success("Təşəkkürlər! 💚"); time.sleep(2); st.rerun()
-            elif user['stars'] > 0 and user['stars'] == last_fb:
-                st.markdown("<p style='text-align:center; color:#2E7D32;'><i>Rəyiniz üçün təşəkkürlər! 💚</i></p>", unsafe_allow_html=True)
-
-            if st.button("Çıxış"): st.query_params.clear(); st.rerun()
-            st.stop()
-
-    # 2. LOGIN SCREEN
     c1, c2, c3 = st.columns([1,1,1])
     with c2:
-        st.markdown(f"<h1 style='text-align:center; color:#2E7D32;'>{BRAND_NAME}</h1><h5 style='text-align:center; color:#777;'>{VERSION}</h5>", unsafe_allow_html=True)
+        st.markdown(f"<h1 style='text-align:center; color:#D32F2F;'>{BRAND_NAME}</h1><h5 style='text-align:center; color:#777;'>{VERSION}</h5>", unsafe_allow_html=True)
         tabs = st.tabs(["İŞÇİ (STAFF)", "İDARƏETMƏ (ADMIN/MANAGER)"])
         with tabs[0]:
             with st.form("staff_login"):
@@ -909,7 +725,10 @@ if not st.session_state.logged_in:
                             st.session_state.logged_in=True; st.session_state.user=row['username']; st.session_state.role='staff'
                             tok=secrets.token_urlsafe(16); run_action("INSERT INTO active_sessions (token,username,role,created_at) VALUES (:t,:u,:r,:time)", {"t":tok,"u":row['username'],"r":'staff',"time":get_baku_now()})
                             log_system(row['username'], "Login (Staff)"); st.query_params["token"] = tok; st.rerun(); found=True; break
-                    if not found: st.error("Yanlış PIN!"); time.sleep(2)
+                    
+                    if not found:
+                        st.error("Yanlış PIN!")
+                        time.sleep(2)
 
         with tabs[1]:
             with st.form("admin_login"):
@@ -927,8 +746,11 @@ if not st.session_state.logged_in:
                             tok=secrets.token_urlsafe(16); run_action("INSERT INTO active_sessions (token,username,role,created_at) VALUES (:t,:u,:r,:time)", {"t":tok,"u":u,"r":row['role'],"time":get_baku_now()})
                             log_system(u, f"Login ({row['role']})"); st.query_params["token"] = tok; st.rerun()
                         else:
-                            register_failed_login(u); st.error("Səhv Məlumat!")
-                    else: st.error("Səhv Məlumat!"); time.sleep(1)
+                            register_failed_login(u)
+                            st.error("Səhv Məlumat!")
+                    else:
+                        st.error("Səhv Məlumat!") 
+                        time.sleep(1)
 else:
     h1, h2, h3 = st.columns([4, 1, 1])
     with h1: st.markdown(f"**👤 {st.session_state.user}** | {st.session_state.role.upper()}")
@@ -943,6 +765,7 @@ else:
     role = st.session_state.role
     
     if role == 'admin':
+        # ADMIN: Full Access
         tabs = st.tabs(["🏃‍♂️ AL-APAR", "🍽️ MASALAR", "📦 Anbar", "📜 Resept", "Analitika", "👥 CRM", "Menyu", "⚙️ Ayarlar", "Admin", "QR"])
         with tabs[0]: render_takeaway()
         with tabs[1]: render_tables_main()
