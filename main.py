@@ -19,10 +19,10 @@ import json
 from collections import Counter
 
 # ==========================================
-# === IRONWAVES POS - V3.8 STABLE (SPLIT BILL) ===
+# === IRONWAVES POS - V3.8.1 (AGGREGATION FIX) ===
 # ==========================================
 
-VERSION = "v3.8 STABLE (Smart Split)"
+VERSION = "v3.8.1 STABLE (Aggregation Fix)"
 
 # --- INFRA ---
 RESEND_API_KEY = os.environ.get("RESEND_API_KEY")
@@ -236,6 +236,15 @@ def calculate_smart_total(cart, customer=None, is_table=False):
             
     return total, discounted_total, coffee_discount_rate, free_coffees_to_apply, total_star_pool, service_charge
 
+# --- SMART ADD (AGGREGATION FIX) ---
+def add_to_cart(cart_ref, item):
+    for ex in cart_ref:
+        # Only aggregate if item exists AND it hasn't been sent to kitchen yet ('new')
+        if ex['item_name'] == item['item_name'] and ex.get('status') == 'new':
+            ex['qty'] += 1
+            return
+    cart_ref.append(item)
+
 # --- 1. MÜŞTƏRİ PORTALI ---
 qp = st.query_params
 if "id" in qp:
@@ -253,7 +262,22 @@ if "id" in qp:
                 with st.expander("Qaydaları Oxumaq üçün Toxunun"):
                     st.markdown("""
                     **İSTİFADƏÇİ RAZILAŞMASI VƏ MƏXFİLİK SİYASƏTİ**
-                    **1. Ümumi Müddəalar**... (Full text hidden for brevity in logic check)
+
+                    **1. Ümumi Müddəalar**
+                    Bu loyallıq proqramı "Ironwaves POS" sistemi vasitəsilə idarə olunur. Qeydiyyatdan keçməklə siz aşağıdakı şərtləri qəbul etmiş olursunuz.
+
+                    **2. Bonuslar, Hədiyyələr və Endirim Siyasəti**
+                    2.1. Toplanılan ulduzlar və bonuslar heç bir halda nağd pula çevrilə, başqa hesaba köçürülə və ya qaytarıla bilməz.
+                    2.2. **Şəxsiyyətin Təsdiqi:** Ad günü və ya xüsusi kampaniya hədiyyələrinin təqdim edilməsi zamanı, sui-istifadə hallarınin qarşısını almaq və təvəllüdü dəqiqləşdirmək məqsədilə, şirkət əməkdaşı müştəridən şəxsiyyət vəsiqəsini təqdim etməsini tələb etmək hüququna malikdir. Sənəd təqdim edilmədikdə hədiyyə verilməyə bilər.
+                    2.3. **Endirimlərin Tətbiq Sahəsi:** Nəzərinizə çatdırırıq ki, "Ironwaves" loyallıq proqramı çərçivəsində təqdim olunan bütün növ imtiyazlar (o cümlədən "Ekoloji Termos" endirimi, xüsusi promo-kodlar və faizli endirim kartları) **müstəsna olaraq kofe və kofe əsaslı içkilərə şamil edilir.** Şirniyyatlar, qablaşdırılmış qida məhsulları və digər soyuq içkilər endirim siyasətindən xaricdir. Sizin kofe həzzinizi daha əlçatan etmək üçün çalışırıq!
+
+                    **3. Dəyişikliklər və İmtina Hüququ**
+                    3.1. Şirkət, bu razılaşmanın şərtlərini dəyişdirmək hüququnu özündə saxlayır.
+                    3.2. **Bildiriş:** Şərtlərdə əsaslı dəyişikliklər edildiyi təqdirdə, qeydiyyatlı e-poçt ünvanınıza bildiriş göndəriləcək.
+                    3.3. **İmtina:** Əgər yeni şərtlərlə razılaşmırsınızsa, sistemdən qeydiyyatınızın və fərdi məlumatlarınızın silinməsini tələb etmək hüququnuz var.
+
+                    **4. Məxfilik**
+                    4.1. Sizin məlumatlarınız (Email, Doğum tarixi) üçüncü tərəflə paylaşılmır və yalnız xidmət keyfiyyətinin artırılması üçün istifadə olunur.
                     """)
                 agree = st.checkbox("Şərtləri qəbul edirəm")
                 if st.form_submit_button("Tamamla"):
@@ -263,6 +287,17 @@ if "id" in qp:
                     else: st.error("Qaydaları qəbul etməlisiniz.")
             st.stop()
         st.markdown(f"<div class='cust-card'><h4 style='margin:0; color:#888;'>BALANS</h4><h1 style='color:#2E7D32; font-size: 48px; margin:0;'>{user['stars']} / 10</h1><p style='color:#555;'>ID: {card_id}</p></div>", unsafe_allow_html=True)
+        html_grid = '<div class="coffee-grid">'
+        for i in range(10):
+            icon_url = "https://cdn-icons-png.flaticon.com/512/751/751621.png"
+            cls = "coffee-icon"; style = ""
+            if i == 9: 
+                icon_url = "https://cdn-icons-png.flaticon.com/512/3209/3209955.png"
+                if user['stars'] >= 10: style="opacity:1; filter:none; animation: bounce 1s infinite;"
+            elif i < user['stars']: style="opacity:1; filter:none;"
+            html_grid += f'<img src="{icon_url}" class="{cls}" style="{style}">'
+        html_grid += '</div>'
+        st.markdown(html_grid, unsafe_allow_html=True)
         st.divider()
         if st.button("Çıxış"): st.query_params.clear(); st.rerun()
         st.stop()
@@ -356,7 +391,6 @@ def show_payment_dialog(table_id):
     if mode == "Tam Ödəniş":
         pm = st.radio("Növ", ["Nəğd", "Kart"], horizontal=True)
         if st.button("✅ Ödənişi Tamamla", type="primary", use_container_width=True):
-            # Same logic as before
             raw_total, final_total, disc_rate, free_count, total_pool, serv_chg = calculate_smart_total(st.session_state.cart_table, st.session_state.current_customer_tb, is_table=True)
             istr = f"[{st.session_state.selected_table['label']}] " + ", ".join([f"{x['item_name']} x{x['qty']}" for x in st.session_state.cart_table])
             cust_id = st.session_state.current_customer_tb['card_id'] if st.session_state.current_customer_tb else None
@@ -378,30 +412,14 @@ def show_payment_dialog(table_id):
             st.session_state.last_sale = {"id": int(time.time()), "items": istr, "total": final_total, "subtotal": raw_total, "discount": raw_total - final_total, "date": get_baku_now().strftime("%Y-%m-%d %H:%M"), "cashier": st.session_state.user, "customer_email": cust_email, "service_charge": serv_chg}
             st.session_state.cart_table=[]; st.session_state.selected_table=None; st.rerun()
 
-    else: # SPLIT BILL
+    else: 
         st.info("Siyahıdan ödəniləcək məhsulların sayını seçin.")
-        
-        # Prepare Dataframe for editor
         split_data = []
         for i, item in enumerate(st.session_state.cart_table):
-            split_data.append({
-                "Məhsul": item['item_name'],
-                "Qiymət": item['price'],
-                "Cəmi Say": item['qty'],
-                "Ödəniləcək Say": 0, # User edits this
-                "_idx": i # hidden index
-            })
-        
+            split_data.append({"Məhsul": item['item_name'], "Qiymət": item['price'], "Cəmi Say": item['qty'], "Ödəniləcək Say": 0, "_idx": i})
         df = pd.DataFrame(split_data)
-        edited_df = st.data_editor(df, column_config={
-            "Məhsul": st.column_config.TextColumn(disabled=True),
-            "Qiymət": st.column_config.NumberColumn(disabled=True),
-            "Cəmi Say": st.column_config.NumberColumn(disabled=True),
-            "Ödəniləcək Say": st.column_config.NumberColumn(min_value=0, max_value=100, step=1),
-            "_idx": None
-        }, hide_index=True, use_container_width=True)
+        edited_df = st.data_editor(df, column_config={"Məhsul": st.column_config.TextColumn(disabled=True), "Qiymət": st.column_config.NumberColumn(disabled=True), "Cəmi Say": st.column_config.NumberColumn(disabled=True), "Ödəniləcək Say": st.column_config.NumberColumn(min_value=0, max_value=100, step=1), "_idx": None}, hide_index=True, use_container_width=True)
         
-        # Calculate selected totals
         selected_cart = []
         remaining_cart = []
         
@@ -409,62 +427,44 @@ def show_payment_dialog(table_id):
             orig_idx = row['_idx']
             orig_item = st.session_state.cart_table[orig_idx]
             pay_qty = int(row['Ödəniləcək Say'])
-            
             if pay_qty > 0:
-                item_copy = orig_item.copy()
-                item_copy['qty'] = pay_qty
+                item_copy = orig_item.copy(); item_copy['qty'] = pay_qty
                 selected_cart.append(item_copy)
-            
             rem_qty = orig_item['qty'] - pay_qty
             if rem_qty > 0:
-                item_rem = orig_item.copy()
-                item_rem['qty'] = rem_qty
+                item_rem = orig_item.copy(); item_rem['qty'] = rem_qty
                 remaining_cart.append(item_rem)
 
         if selected_cart:
-            # Calculate total for Selected portion
             raw_t, final_t, _, free_cnt, pool, serv = calculate_smart_total(selected_cart, st.session_state.current_customer_tb, is_table=True)
             st.divider()
             st.markdown(f"**Ödəniləcək Məbləğ:** {final_t:.2f} ₼")
             pm_split = st.radio("Ödəniş", ["Nəğd", "Kart"], horizontal=True, key="pm_split")
             
             if st.button(f"Hissəli Ödə ({final_t:.2f} ₼)"):
-                # 1. Record Sale
                 istr = f"[{st.session_state.selected_table['label']} - Split] " + ", ".join([f"{x['item_name']} x{x['qty']}" for x in selected_cart])
                 cust_id = st.session_state.current_customer_tb['card_id'] if st.session_state.current_customer_tb else None
                 run_action("INSERT INTO sales (items, total, payment_method, cashier, created_at, customer_card_id) VALUES (:i,:t,:p,:c,:time, :cid)", 
                            {"i":istr,"t":final_t,"p":("Cash" if pm_split=="Nəğd" else "Card"),"c":st.session_state.user, "time":get_baku_now(), "cid":cust_id})
                 
-                # 2. Inventory & Stars
                 with conn.session as s:
                     for it in selected_cart:
                         rs = s.execute(text("SELECT ingredient_name, quantity_required FROM recipes WHERE menu_item_name=:m"), {"m":it['item_name']}).fetchall()
                         for r in rs: s.execute(text("UPDATE ingredients SET stock_qty=stock_qty-:q WHERE name=:n"), {"q":float(r[1])*it['qty'], "n":r[0]})
-                    # Note: We update stars only based on paid items
                     if st.session_state.current_customer_tb:
-                        # Logic: Total Pool for user is current DB stars + paid items coffee count
-                        # Then deduct free items used in THIS transaction
-                        # But wait, 'pool' calculated above includes ALL items in cart if we used current_stars. 
-                        # We must be careful. Simplified: Update stars based on transaction.
-                        # New Balance = Old DB Stars + (Paid Coffees) - (Free Coffees Used * 10)
-                        # We need Old DB Stars specifically.
                         old_stars = st.session_state.current_customer_tb.get('stars', 0)
                         paid_coffee_count = sum([x['qty'] for x in selected_cart if x.get('is_coffee')])
                         new_bal = (old_stars + paid_coffee_count) - (free_cnt * 10)
                         s.execute(text("UPDATE customers SET stars=:s WHERE card_id=:id"), {"s":new_bal, "id":cust_id})
                     s.commit()
 
-                # 3. Update Table with Remaining
                 if not remaining_cart:
-                    # Table Empty
                     run_action("UPDATE tables SET is_occupied=FALSE, items=NULL, total=0, active_customer_id=NULL WHERE id=:id", {"id":table_id})
                     st.session_state.selected_table = None
                 else:
-                    # Recalc remaining total
                     _, rem_total, _, _, _, _ = calculate_smart_total(remaining_cart, st.session_state.current_customer_tb, is_table=True)
-                    run_action("UPDATE tables SET items=:i, total=:t WHERE id=:id", 
-                               {"i":json.dumps(remaining_cart), "t":rem_total, "id":table_id})
-                    st.session_state.cart_table = remaining_cart # Update session UI
+                    run_action("UPDATE tables SET items=:i, total=:t WHERE id=:id", {"i":json.dumps(remaining_cart), "t":rem_total, "id":table_id})
+                    st.session_state.cart_table = remaining_cart
                 
                 st.session_state.last_sale = {"id": int(time.time()), "items": istr, "total": final_t, "subtotal": raw_t, "discount": raw_t - final_t, "date": get_baku_now().strftime("%Y-%m-%d %H:%M"), "cashier": st.session_state.user, "customer_email": None, "service_charge": serv}
                 st.rerun()
@@ -697,7 +697,7 @@ def render_menu_grid(cart_ref, key_prefix):
             st.write(f"### {bn}")
             for it in its:
                 if st.button(f"{it['item_name'].replace(bn,'').strip()}\n{it['price']} ₼", key=f"v_{it['id']}_{key_prefix}", use_container_width=True):
-                    cart_ref.append({'item_name':it['item_name'], 'price':float(it['price']), 'qty':1, 'is_coffee':it['is_coffee'], 'status':'new'}); st.rerun()
+                    add_to_cart(cart_ref, {'item_name':it['item_name'], 'price':float(it['price']), 'qty':1, 'is_coffee':it['is_coffee'], 'status':'new'}); st.rerun()
         for bn, its in gr.items():
             with cols[i%4]:
                 if len(its)>1:
@@ -705,7 +705,7 @@ def render_menu_grid(cart_ref, key_prefix):
                 else:
                     it = its[0]
                     if st.button(f"{it['item_name']}\n{it['price']} ₼", key=f"s_{it['id']}_{key_prefix}", use_container_width=True):
-                        cart_ref.append({'item_name':it['item_name'], 'price':float(it['price']), 'qty':1, 'is_coffee':it['is_coffee'], 'status':'new'}); st.rerun()
+                        add_to_cart(cart_ref, {'item_name':it['item_name'], 'price':float(it['price']), 'qty':1, 'is_coffee':it['is_coffee'], 'status':'new'}); st.rerun()
             i+=1
 
 # --- INIT STATE ---
