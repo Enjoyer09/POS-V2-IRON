@@ -21,17 +21,17 @@ import streamlit.components.v1 as components
 import re
 
 # ==========================================
-# === EMALATKHANA POS - V6.04 (FIXED TABS) ===
+# === EMALATKHANA POS - V6.06 (EXPANDED MANAGER) ===
 # ==========================================
 
-VERSION = "v6.04 (Fixed: Tabs NameError & Dynamic Logic)"
+VERSION = "v6.06 (Manager Menu/Recipe Add & Bug Fixes)"
 BRAND_NAME = "Emalatkhana Daily Drinks and Coffee"
 
 # --- CONFIG ---
 st.set_page_config(page_title=BRAND_NAME, page_icon="☕", layout="wide", initial_sidebar_state="collapsed")
 ADMIN_DEFAULT_PASS = os.environ.get("ADMIN_PASS", "admin123") 
 
-# --- YENİLƏNMİŞ QAYDALAR (GÖZƏL DİZAYN) ---
+# --- YENİLƏNMİŞ QAYDALAR (MÜŞTƏRİ ÜÇÜN) ---
 DEFAULT_TERMS = """
 <div style="font-family: 'Arial', sans-serif; color: #333; line-height: 1.6; font-size: 14px;">
     <h4 style="color: #2E7D32; border-bottom: 2px solid #2E7D32; padding-bottom: 10px; margin-top: 0;">
@@ -246,28 +246,6 @@ def validate_session():
     return not res.empty
 def clear_customer_data():
     st.session_state.current_customer_ta = None
-
-# --- GENERATE IDEAL RECIPES EXCEL FUNCTION (FIXED) ---
-def generate_ideal_recipes_excel():
-    COFFEE_BEAN = "Latina Blend Coffee"; MILK = "Milla Sud 3.2%"; CREAM = "Dom qaymaq 10%"
-    SYRUP_VANILLA = "Sirop Barinoff (Vanil)"; CHOCO_SAUCE = "Topping Chocolate PS"
-    ICE = "Buz (Ice)"; WATER = "Damacana Su"; ICE_CREAM = "Dondurma (Vanil)"
-    CUP_XS = "Stəkan Kağız (XS)"; CUP_S = "Stəkan Kağız (S)"; CUP_M = "Stəkan Kağız (M)"; CUP_L = "Stəkan Kağız (L)"; CUP_PLASTIC_M = "Stəkan Şəffaf (M)"
-    LID_S = "Qapaq İsti (Kiçik)"; LID_L = "Qapaq İsti (Böyük)"; LID_PLASTIC = "Qapaq Şəffaf (Stəkan üçün)"
-
-    data = [
-        ("Espresso S", COFFEE_BEAN, 0.009), ("Espresso S", CUP_XS, 1),
-        ("Americano S", COFFEE_BEAN, 0.009), ("Americano S", WATER, 0.200), ("Americano S", CUP_S, 1), ("Americano S", LID_S, 1),
-        ("Cappuccino S", COFFEE_BEAN, 0.009), ("Cappuccino S", MILK, 0.150), ("Cappuccino S", CUP_S, 1), ("Cappuccino S", LID_S, 1),
-        ("Latte S", COFFEE_BEAN, 0.009), ("Latte S", MILK, 0.200), ("Latte S", CUP_S, 1), ("Latte S", LID_S, 1),
-        ("Raf S", COFFEE_BEAN, 0.009), ("Raf S", MILK, 0.100), ("Raf S", CREAM, 0.050), ("Raf S", SYRUP_VANILLA, 0.015), ("Raf S", CUP_S, 1), ("Raf S", LID_S, 1),
-        ("Mocha S", COFFEE_BEAN, 0.009), ("Mocha S", MILK, 0.150), ("Mocha S", CHOCO_SAUCE, 0.020), ("Mocha S", CUP_S, 1), ("Mocha S", LID_S, 1),
-        ("Ice Americano S", COFFEE_BEAN, 0.009), ("Ice Americano S", WATER, 0.150), ("Ice Americano S", ICE, 0.100), ("Ice Americano S", CUP_PLASTIC_M, 1),
-        ("Iced Latte S", COFFEE_BEAN, 0.009), ("Iced Latte S", MILK, 0.150), ("Iced Latte S", ICE, 0.100), ("Iced Latte S", CUP_PLASTIC_M, 1),
-        ("Milkşeyk S", ICE_CREAM, 0.150), ("Milkşeyk S", MILK, 0.050), ("Milkşeyk S", CUP_PLASTIC_M, 1)
-    ]
-    df = pd.DataFrame(data, columns=["menu_item_name", "ingredient_name", "quantity_required"])
-    out = BytesIO(); df.to_excel(out, index=False); return out.getvalue()
 
 @st.dialog("🔐 Admin Təsdiqi")
 def admin_confirm_dialog(action_name, callback, *args):
@@ -862,7 +840,7 @@ else:
                                 s.commit()
                             st.success("Yeniləndi!"); time.sleep(0.5); st.rerun()
                 st.divider()
-                if role == 'admin':
+                if role in ['admin', 'manager']: # Allow manager too
                     with st.form("add_rec", clear_on_submit=True):
                         ing_data = run_query("SELECT name, stock_qty, unit FROM ingredients ORDER BY name")
                         ing_options = {f"{r['name']} (Stok: {r['stock_qty']} {r['unit']})": r['name'] for _, r in ing_data.iterrows()}
@@ -874,10 +852,6 @@ else:
                             run_action("INSERT INTO recipes (menu_item_name,ingredient_name,quantity_required) VALUES (:m,:i,:q)",{"m":sel_prod,"i":real_ing_name,"q":s_q}); st.rerun()
             
             if role == 'admin':
-                with st.expander("🛠️ İdeal Reseptləri Yüklə (SCA Standartı)"):
-                    excel_bytes = generate_ideal_recipes_excel()
-                    st.download_button("📥 İdeal Reseptləri Endir (Excel)", excel_bytes, "ideal_recipes.xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
-
                 with st.expander("📤 Reseptləri İmport / Export (Excel)"):
                     if st.button("⚠️ Bütün Reseptləri Sil (Təmizlə)", type="primary"):
                         admin_confirm_dialog("Bütün reseptlər silinsin? Geri qaytarmaq olmayacaq!", lambda: run_action("DELETE FROM recipes"))
@@ -983,7 +957,7 @@ else:
     if "📋 Menyu" in tab_map:
         with tab_map["📋 Menyu"]:
             st.subheader("📋 Menyu"); 
-            if role == 'admin':
+            if role in ['admin', 'manager']: # Allow manager too
                 with st.expander("➕ Tək Mal Əlavə Et (Menu)"):
                     with st.form("nm", clear_on_submit=True):
                         n=st.text_input("Ad"); p=st.number_input("Qiymət"); c=st.text_input("Kat"); ic=st.checkbox("Kofe?")
@@ -1030,15 +1004,14 @@ else:
                                 except Exception as e: st.error(f"Xəta: {e}")
                     if st.button("📤 Menyu Excel Kimi Endir"): out = BytesIO(); run_query("SELECT item_name, price, category, is_coffee FROM menu").to_excel(out, index=False); st.download_button("⬇️ Endir (menu.xlsx)", out.getvalue(), "menu.xlsx")
 
-    if "⚙️ Ayarlar" in tab_map:
-        with tab_map["⚙️ Ayarlar"]:
+        with tabs[9]: # SETTINGS
             st.subheader("⚙️ Ayarlar")
             st.markdown("### 🛠️ Menecer Səlahiyyətləri")
             col_mp1, col_mp2, col_mp3, col_mp4 = st.columns(4)
             perm_menu = col_mp1.checkbox("✅ Menyu (Düzəliş)", value=(get_setting("manager_perm_menu", "FALSE") == "TRUE"))
             if col_mp1.button("Yadda Saxla (Menu)"): set_setting("manager_perm_menu", "TRUE" if perm_menu else "FALSE"); st.success("OK"); time.sleep(0.5); st.rerun()
             perm_tables = col_mp2.checkbox("✅ Masalar", value=(get_setting("manager_show_tables", "TRUE") == "TRUE"))
-            if col_mp2.button("Yadda Saxla (Tables)"): set_setting("manager_show_tables", "TRUE" if perm_tables else "FALSE"); st.success("OK"); time.sleep(0.5); st.rerun()
+            if col_mp2.button("Yadda Saxla (Tables)", key="save_mgr_tables"): set_setting("manager_show_tables", "TRUE" if perm_tables else "FALSE"); st.success("OK"); time.sleep(0.5); st.rerun()
             perm_crm = col_mp3.checkbox("✅ CRM (Müştəri)", value=(get_setting("manager_perm_crm", "TRUE") == "TRUE")) 
             if col_mp3.button("Yadda Saxla (CRM)"): set_setting("manager_perm_crm", "TRUE" if perm_crm else "FALSE"); st.success("OK"); time.sleep(0.5); st.rerun()
             perm_recipes = col_mp4.checkbox("✅ Reseptlər", value=(get_setting("manager_perm_recipes", "FALSE") == "TRUE"))
@@ -1074,7 +1047,7 @@ else:
             
             with st.expander("🔧 Sistem"):
                 st_tbl = st.checkbox("Staff Masaları Görsün?", value=(get_setting("staff_show_tables","TRUE")=="TRUE"))
-                if st.button("Yadda Saxla (Tables)"): set_setting("staff_show_tables", "TRUE" if st_tbl else "FALSE"); st.rerun()
+                if st.button("Yadda Saxla (Tables)", key="save_staff_tables"): set_setting("staff_show_tables", "TRUE" if st_tbl else "FALSE"); st.rerun()
                 test_mode = st.checkbox("Z-Hesabat [TEST MODE]?", value=(get_setting("z_report_test_mode") == "TRUE"))
                 if st.button("Yadda Saxla (Test Mode)"): set_setting("z_report_test_mode", "TRUE" if test_mode else "FALSE"); st.success("Dəyişdirildi!"); st.rerun()
                 c_lim = st.number_input("Standart Kassa Limiti (Z-Hesabat üçün)", value=float(get_setting("cash_limit", "100.0")))
