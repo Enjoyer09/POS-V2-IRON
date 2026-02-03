@@ -21,11 +21,11 @@ import streamlit.components.v1 as components
 import re
 
 # ==========================================
-# === EMALATKHANA POS - V5.28 (DEMO EDITION) ===
+# === IronWaves POS - V5.28 (DEMO EDITION) ===
 # ==========================================
 
 VERSION = "v5.28 DEMO (Stable + Notepad)"
-BRAND_NAME = "Emalatkhana (DEMO REJİMİ)"
+BRAND_NAME = "IronWaves (DEMO REJİMİ)"
 
 # --- CONFIG ---
 st.set_page_config(page_title=BRAND_NAME, page_icon="🧪", layout="wide", initial_sidebar_state="collapsed")
