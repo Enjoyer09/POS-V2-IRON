@@ -94,6 +94,39 @@ def get_baku_now():
     return datetime.datetime.now(
         datetime.timezone(datetime.timedelta(hours=4))
     ).replace(tzinfo=None)
+# =========================
+# AUTO DB MIGRATION (SAFE)
+# =========================
+
+def safe_add_column(table, column_def):
+    try:
+        with conn.session as s:
+            s.execute(text(f"ALTER TABLE {table} ADD COLUMN IF NOT EXISTS {column_def}"))
+            s.commit()
+    except:
+        pass
+
+def run_auto_migrations():
+
+    # users table patches
+    safe_add_column("users", "failed_attempts INTEGER DEFAULT 0")
+    safe_add_column("users", "last_seen TIMESTAMP")
+
+    # active_sessions patches
+    safe_add_column("active_sessions", "expires_at TIMESTAMP")
+
+    # sales patches
+    safe_add_column("sales", "original_total DECIMAL(10,2) DEFAULT 0")
+    safe_add_column("sales", "discount_amount DECIMAL(10,2) DEFAULT 0")
+    safe_add_column("sales", "note TEXT")
+
+    # finance patches
+    safe_add_column("finance", "subject TEXT")
+
+    # ingredients patches
+    safe_add_column("ingredients", "unit_cost DECIMAL(18,5) DEFAULT 0")
+
+run_auto_migrations()
 
 # =========================
 # SCHEMA ENSURE (SAFE)
@@ -282,7 +315,8 @@ if not st.session_state.logged_in:
 
             r = row.iloc[0]
 
-            if r["failed_attempts"] >= 5:
+           if r.get("failed_attempts", 0) >= 5:
+
                 st.error("Hesab bloklanıb")
                 st.stop()
 
