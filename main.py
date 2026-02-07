@@ -310,40 +310,44 @@ if not st.session_state.logged_in:
             )
 
             if row.empty:
-                st.error("Tapılmadı")
-                st.stop()
+    st.error("Tapılmadı")
+    st.stop()
 
-            r = row.iloc[0]
+r = row.iloc[0]
 
-           if r.get("failed_attempts", 0) >= 5:
+# ---- SAFE FAILED ATTEMPTS CHECK ----
+failed = r.get("failed_attempts", 0)
 
-                st.error("Hesab bloklanıb")
-                st.stop()
+if failed >= 5:
+    st.error("Hesab bloklanıb")
+    st.stop()
 
-            if verify_password(p, r["password"]):
+if verify_password(p, r["password"]):
 
-                run_action("""
-                UPDATE users SET failed_attempts=0
-                WHERE username=:u
-                """, {"u": u})
+    run_action("""
+    UPDATE users SET failed_attempts=0
+    WHERE username=:u
+    """, {"u": u})
 
-                token = create_session(u, r["role"])
+    token = create_session(u, r["role"])
 
-                st.session_state.logged_in = True
-                st.session_state.session_token = token
-                st.session_state.user = u
-                st.session_state.role = r["role"]
+    st.session_state.logged_in = True
+    st.session_state.session_token = token
+    st.session_state.user = u
+    st.session_state.role = r["role"]
 
-                st.rerun()
+    st.rerun()
 
-            else:
-                run_action("""
-                UPDATE users
-                SET failed_attempts = failed_attempts + 1
-                WHERE username=:u
-                """, {"u": u})
+else:
 
-                st.error("Şifrə səhv")
+    run_action("""
+    UPDATE users
+    SET failed_attempts = COALESCE(failed_attempts,0) + 1
+    WHERE username=:u
+    """, {"u": u})
+
+    st.error("Şifrə səhv")
+
 
     st.stop()
 
